@@ -13,6 +13,7 @@ Kaner Optik için saf HTML, CSS ve JavaScript ile geliştirilmiş; masaüstü ve
 - Ciro, ödeme ve müşteri raporları
 - CSV dışa aktarma ve JSON yedekleme/geri yükleme
 - Mobil alt navigasyon ve hızlı işlem menüsü
+- iPhone/iPad Safari safe-area, yatay kullanım ve klavye optimizasyonu
 - Karanlık tema ve erişilebilir hareket tercihleri
 
 ## Çalıştırma
