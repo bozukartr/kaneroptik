@@ -1,0 +1,11 @@
+{
+  "name": "Kaner Optik Yönetim",
+  "short_name": "Kaner Optik",
+  "description": "Optik mağazaları için müşteri, reçete, satış ve stok yönetimi.",
+  "lang": "tr",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f4f7f8",
+  "theme_color": "#0b3b43",
+  "orientation": "any"
+}
