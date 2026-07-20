@@ -1,4 +1,4 @@
-const CACHE_NAME = "kaner-optik-v3";
+const CACHE_NAME = "kaner-optik-v4";
 const APP_SHELL = ["./", "./index.html", "./assets/enterprise.css", "./assets/mobile.js", "./assets/firebase-config.js", "./assets/firebase-sync.js", "./manifest.webmanifest"];
 
 self.addEventListener("install", event => {
