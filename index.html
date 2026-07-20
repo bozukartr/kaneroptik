@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Kaner Optik — Mağaza Yönetim Sistemi</title>
 <meta name="description" content="Kaner Optik müşteri, reçete, satış ve stok yönetim uygulaması">
 <meta name="theme-color" content="#0B3B43">
@@ -322,7 +322,7 @@
     .grid-4{grid-template-columns:repeat(2,1fr);}
     .grid-3{grid-template-columns:1fr;}
   }
-  @media (max-width:760px){
+  @media (max-width:900px), (max-width:1024px) and (orientation:landscape) and (hover:none){
     .sidebar{position:fixed;z-index:50;transform:translateX(-100%);transition:transform .2s ease;box-shadow:var(--shadow-lg);}
     .sidebar.open{transform:none;}
     .main{width:100%;}
