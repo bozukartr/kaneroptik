@@ -25,7 +25,30 @@ python3 -m http.server 8080
 
 Ardından `http://localhost:8080` adresini açın.
 
-## Veri saklama
+## Firebase kurulumu
 
-Uygulama verileri tarayıcının `localStorage` alanında tutulur. Ayarlar > Veri Yönetimi bölümünden düzenli JSON yedeği alınabilir.
+Uygulama `kaneroptik` Firebase projesine bağlıdır. Derleme veya npm paketi gerekmez; resmi Firebase CDN modülleri kullanılır.
 
+İlk kurulumdan önce Firebase Console'da:
+
+1. **Authentication > Sign-in method** bölümünden Email/Password yöntemini etkinleştirin.
+2. **Authentication > Users** bölümünde `admin@kaneroptik.app` kullanıcısını güçlü bir parolayla oluşturun.
+3. **Firestore Database** bölümünden veritabanını oluşturun.
+4. Bu repodaki güvenlik kurallarını ve uygulamayı yayınlayın:
+
+```bash
+npx firebase-tools login
+npx firebase-tools deploy
+```
+
+İlk açılışta Firebase yönetici parolası yalnızca cihazı yetkilendirmek için bir kez istenir ve cihazda saklanmaz. Ardından belirlenen 4 haneli PIN kullanılır.
+
+## Veri saklama ve güvenlik
+
+- Müşteri, reçete, satış ve stok kayıtları Firestore ile cihazlar arasında senkronize edilir.
+- Firestore'un çevrimdışı önbelleği sayesinde bağlantı kesildiğinde çalışmaya devam eder.
+- PIN PBKDF2/SHA-256 ile özetlenerek yalnızca ilgili cihazda saklanır.
+- Beş hatalı PIN denemesinden sonra 30 saniyelik kilit uygulanır.
+- 15 dakika işlem yapılmadığında uygulama otomatik kilitlenir.
+- Firestore kuralları yalnızca `admin@kaneroptik.app` hesabına erişim verir.
+- Ayarlar > Veri Yönetimi bölümünden ayrıca JSON yedeği alınabilir.
