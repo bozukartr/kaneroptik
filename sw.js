@@ -1,5 +1,5 @@
-const CACHE_NAME = "kaner-optik-v2";
-const APP_SHELL = ["./", "./index.html", "./assets/enterprise.css", "./assets/mobile.js", "./manifest.webmanifest"];
+const CACHE_NAME = "kaner-optik-v3";
+const APP_SHELL = ["./", "./index.html", "./assets/enterprise.css", "./assets/mobile.js", "./assets/firebase-config.js", "./assets/firebase-sync.js", "./manifest.webmanifest"];
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)));
