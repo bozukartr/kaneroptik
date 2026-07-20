@@ -7,6 +7,7 @@ Kaner Optik için saf HTML, CSS ve JavaScript ile geliştirilmiş; masaüstü ve
 - Yönetim paneli ve KPI kartları
 - Müşteri kayıtları, etiketler ve detay ekranı
 - Optik reçete yönetimi ve lens diyagramı
+- Reçete ekranından ayrılmadan hızlı müşteri oluşturma
 - Satış, tahsilat ve otomatik stok düşümü
 - A5 fatura ve termal fiş çıktısı
 - Ürün/stok yönetimi ve kritik stok uyarıları
