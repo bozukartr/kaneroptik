@@ -2,7 +2,7 @@
 <html lang="tr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Kaner Optik — Mağaza Yönetim Sistemi</title>
 <meta name="description" content="Kaner Optik müşteri, reçete, satış ve stok yönetim uygulaması">
 <meta name="theme-color" content="#0B3B43">
@@ -322,7 +322,7 @@
     .grid-4{grid-template-columns:repeat(2,1fr);}
     .grid-3{grid-template-columns:1fr;}
   }
-  @media (max-width:760px){
+  @media (max-width:900px), (max-width:1024px) and (orientation:landscape) and (hover:none){
     .sidebar{position:fixed;z-index:50;transform:translateX(-100%);transition:transform .2s ease;box-shadow:var(--shadow-lg);}
     .sidebar.open{transform:none;}
     .main{width:100%;}
@@ -2087,7 +2087,7 @@ function rxEyeFieldsHTML(prefix, label, eye){
 
 function customerSelectHTML(selectedId){
   return `<select id="f_rx_customer">
-    <option value="">Müşteri seçin…</option>
+    <option value="">${DB.customers.length ? "Müşteri seçin…" : "Henüz müşteri bulunmuyor"}</option>
     ${DB.customers.slice().sort((a,b)=>a.ad.localeCompare(b.ad,'tr')).map(c=>`<option value="${c.id}" ${c.id===selectedId?"selected":""}>${escapeHTML(customerFullName(c))}</option>`).join("")}
   </select>`;
 }
@@ -2098,7 +2098,36 @@ function openRxForm(rx, presetCustomerId){
   openModal(`
     <div class="modal-header"><h3>${isEdit?"Reçeteyi Düzenle":"Yeni Reçete"}</h3><button class="btn-icon" data-close>✕</button></div>
     <div class="modal-body">
-      <div class="field"><label>Müşteri *</label>${customerSelectHTML(data.customerId)}</div>
+      <div class="rx-customer-picker">
+        <div class="field" style="margin-bottom:0;">
+          <label>Müşteri *</label>
+          <div class="rx-customer-select-row">
+            ${customerSelectHTML(data.customerId)}
+            <button class="btn btn-ghost" type="button" id="toggleRxQuickCustomer" aria-expanded="${DB.customers.length===0?'true':'false'}">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+              Yeni müşteri
+            </button>
+          </div>
+        </div>
+        <div class="rx-quick-customer ${DB.customers.length===0?'open':''}" id="rxQuickCustomerPanel" aria-hidden="${DB.customers.length===0?'false':'true'}">
+          <div class="rx-quick-customer-head">
+            <div><strong>Hızlı müşteri oluştur</strong><span>Reçete bilgileri korunur ve yeni müşteri otomatik seçilir.</span></div>
+            <span class="badge badge-neutral">Reçete içinde</span>
+          </div>
+          <div class="form-row">
+            <div class="field"><label>Ad *</label><input id="f_rxq_ad" autocomplete="given-name" placeholder="Ad"></div>
+            <div class="field"><label>Soyad *</label><input id="f_rxq_soyad" autocomplete="family-name" placeholder="Soyad"></div>
+          </div>
+          <div class="form-row">
+            <div class="field"><label>Telefon *</label><input id="f_rxq_telefon" inputmode="tel" autocomplete="tel" placeholder="05XX XXX XX XX"></div>
+            <div class="field"><label>E-posta</label><input id="f_rxq_email" type="email" inputmode="email" autocomplete="email" placeholder="ornek@email.com"></div>
+          </div>
+          <div class="rx-quick-customer-actions ${DB.customers.length?'':'single'}">
+            ${DB.customers.length ? '<button class="btn btn-ghost btn-sm" type="button" id="cancelRxQuickCustomer">Vazgeç</button>' : ''}
+            <button class="btn btn-primary btn-sm" type="button" id="saveRxQuickCustomer">Müşteriyi oluştur ve seç</button>
+          </div>
+        </div>
+      </div>
       <div class="form-row">
         <div class="field"><label>Tarih *</label><input type="date" id="f_rx_tarih" value="${fmtDateInput(data.tarih)||todayISO()}"></div>
         <div class="field"><label>Doktor</label><input id="f_rx_doktor" value="${escapeHTML(data.doktor)}" placeholder="Dr. Adı Soyadı"></div>
@@ -2125,6 +2154,54 @@ function openRxForm(rx, presetCustomerId){
 
   let selectedType = data.tur;
   document.querySelectorAll("[data-close]").forEach(b=> b.addEventListener("click", closeModal));
+  const quickCustomerPanel = document.getElementById("rxQuickCustomerPanel");
+  const quickCustomerToggle = document.getElementById("toggleRxQuickCustomer");
+  function setQuickCustomerOpen(open){
+    quickCustomerPanel.classList.toggle("open", open);
+    quickCustomerPanel.setAttribute("aria-hidden", String(!open));
+    quickCustomerToggle.setAttribute("aria-expanded", String(open));
+    if(open) setTimeout(()=>document.getElementById("f_rxq_ad").focus(), 120);
+  }
+  quickCustomerToggle.addEventListener("click", ()=> setQuickCustomerOpen(!quickCustomerPanel.classList.contains("open")));
+  const quickCustomerCancel = document.getElementById("cancelRxQuickCustomer");
+  if(quickCustomerCancel) quickCustomerCancel.addEventListener("click", ()=> setQuickCustomerOpen(false));
+  const quickPhoneInput = document.getElementById("f_rxq_telefon");
+  quickPhoneInput.addEventListener("input", e=>{ e.target.value = formatPhoneMask(e.target.value); });
+  const saveQuickCustomer = ()=>{
+    const ad = document.getElementById("f_rxq_ad").value.trim();
+    const soyad = document.getElementById("f_rxq_soyad").value.trim();
+    const telefon = quickPhoneInput.value.trim();
+    const emailInput = document.getElementById("f_rxq_email");
+    const email = emailInput.value.trim();
+    if(!ad || !soyad || !telefon){ showToast("Ad, soyad ve telefon zorunludur.","error"); return; }
+    if(email && !emailInput.checkValidity()){ showToast("Geçerli bir e-posta adresi girin.","error"); return; }
+    const phoneDigits = telefon.replace(/\D/g,"");
+    const existing = DB.customers.find(c=>(c.telefon||"").replace(/\D/g,"")===phoneDigits);
+    if(existing){
+      document.getElementById("f_rx_customer").value = existing.id;
+      setQuickCustomerOpen(false);
+      showToast("Bu telefonla kayıtlı müşteri seçildi.","success");
+      return;
+    }
+    const customer = {
+      id:uid("cus"), ad, soyad, telefon, email,
+      tc:"", dogumTarihi:"", cinsiyet:"", adres:"", notlar:"",
+      etiketler:["Yeni"], olusturma:new Date().toISOString()
+    };
+    DB.customers.push(customer);
+    saveDB();
+    const select = document.getElementById("f_rx_customer");
+    select.innerHTML = '<option value="">Müşteri seçin…</option>' + DB.customers.slice().sort((a,b)=>a.ad.localeCompare(b.ad,'tr')).map(c=>`<option value="${c.id}">${escapeHTML(customerFullName(c))}</option>`).join("");
+    select.value = customer.id;
+    setQuickCustomerOpen(false);
+    showToast(`${customerFullName(customer)} oluşturuldu ve seçildi.`,"success");
+    document.getElementById("f_rx_tarih").focus();
+  };
+  document.getElementById("saveRxQuickCustomer").addEventListener("click", saveQuickCustomer);
+  quickCustomerPanel.querySelectorAll("input").forEach(input=>input.addEventListener("keydown", e=>{
+    if(e.key==="Enter"){ e.preventDefault(); saveQuickCustomer(); }
+  }));
+  if(DB.customers.length===0) setTimeout(()=>document.getElementById("f_rxq_ad").focus(), 160);
   document.querySelectorAll("#rxTypeChips .chip").forEach(chip=>{
     chip.addEventListener("click", ()=>{
       document.querySelectorAll("#rxTypeChips .chip").forEach(c=>c.classList.remove("active"));

@@ -23,6 +23,17 @@
     ["reports", "Raporlar", icons.chart]
   ];
 
+  const contextActions = {
+    dashboard: ["sale", "Yeni satış", icons.sale],
+    customers: ["customer", "Yeni müşteri", icons.users],
+    prescriptions: ["rx", "Yeni reçete", icons.rx],
+    sales: ["sale", "Yeni satış", icons.sale],
+    inventory: ["product", "Yeni ürün", icons.box]
+  };
+
+  let viewportBaselineHeight = Math.max(window.innerHeight, document.documentElement.clientHeight);
+  let viewportBaselineWidth = window.innerWidth;
+
   function createMobileShell() {
     const appbar = document.createElement("header");
     appbar.className = "mobile-appbar";
@@ -62,10 +73,10 @@
         <h2 id="quickSheetTitle">Hızlı işlem</h2>
         <p>Sık kullanılan işlemlerden birini seçin.</p>
         <div class="quick-actions">
-          <button class="quick-action" type="button" data-quick="customer">${icons.users}<span>Yeni müşteri</span></button>
-          <button class="quick-action" type="button" data-quick="sale">${icons.sale}<span>Yeni satış</span></button>
-          <button class="quick-action" type="button" data-quick="rx">${icons.rx}<span>Yeni reçete</span></button>
-          <button class="quick-action" type="button" data-quick="product">${icons.box}<span>Yeni ürün</span></button>
+          ${quickActionHTML("customer", icons.users, "Yeni müşteri", "Kişi ve iletişim bilgileri")}
+          ${quickActionHTML("sale", icons.sale, "Yeni satış", "Ürün ve tahsilat kaydı")}
+          ${quickActionHTML("rx", icons.rx, "Yeni reçete", "Göz ölçümü ve doktor")}
+          ${quickActionHTML("product", icons.box, "Yeni ürün", "Stok kartı oluştur")}
         </div>
       </section>`;
 
@@ -76,14 +87,14 @@
 
     document.body.append(appbar, nav, fab, sheet, status);
 
-    appbar.querySelector("#mobileBrand").addEventListener("click", () => navigate("dashboard"));
-    appbar.querySelector("#mobileSearch").addEventListener("click", openCmdk);
-    appbar.querySelector("#mobileAlerts").addEventListener("click", openMobileAlerts);
-    appbar.querySelector("#mobileTheme").addEventListener("click", toggleTheme);
+    appbar.querySelector("#mobileBrand").addEventListener("click", () => { touchFeedback(); navigate("dashboard"); });
+    appbar.querySelector("#mobileSearch").addEventListener("click", () => { touchFeedback(); openCmdk(); });
+    appbar.querySelector("#mobileAlerts").addEventListener("click", () => { touchFeedback(); openMobileAlerts(); });
+    appbar.querySelector("#mobileTheme").addEventListener("click", () => { touchFeedback(); toggleTheme(); });
     nav.querySelectorAll("[data-mobile-view]").forEach(button => {
-      button.addEventListener("click", () => navigate(button.dataset.mobileView));
+      button.addEventListener("click", () => { touchFeedback(); navigate(button.dataset.mobileView); });
     });
-    fab.addEventListener("click", () => toggleQuickSheet(true));
+    fab.addEventListener("click", () => { touchFeedback(); toggleQuickSheet(true); });
     sheet.addEventListener("click", event => {
       if (event.target === sheet) toggleQuickSheet(false);
       const action = event.target.closest("[data-quick]");
@@ -91,14 +102,28 @@
     });
   }
 
+  function quickActionHTML(action, icon, title, description) {
+    return `<button class="quick-action" type="button" data-quick="${action}">${icon}<span><strong>${title}</strong><small>${description}</small></span></button>`;
+  }
+
+  function touchFeedback() {
+    if (navigator.vibrate) navigator.vibrate(8);
+  }
+
   function toggleQuickSheet(open) {
     const sheet = document.getElementById("quickSheet");
     sheet.classList.toggle("open", open);
     sheet.setAttribute("aria-hidden", String(!open));
+    document.getElementById("mobileFab").setAttribute("aria-expanded", String(open));
     document.body.style.overflow = open ? "hidden" : "";
+    const app = document.querySelector(".app");
+    if (app && "inert" in app) app.inert = open;
+    if (open) setTimeout(() => sheet.querySelector(".quick-action, .alert-item, [data-sheet-close]")?.focus(), 180);
+    else document.getElementById("mobileFab")?.focus({preventScroll:true});
   }
 
   function runQuickAction(action) {
+    touchFeedback();
     toggleQuickSheet(false);
     if (action === "customer") openCustomerForm();
     if (action === "sale") openSaleForm();
@@ -144,10 +169,10 @@
         <div class="sheet-handle"></div><h2 id="quickSheetTitle">Hızlı işlem</h2>
         <p>Sık kullanılan işlemlerden birini seçin.</p>
         <div class="quick-actions">
-          <button class="quick-action" type="button" data-quick="customer">${icons.users}<span>Yeni müşteri</span></button>
-          <button class="quick-action" type="button" data-quick="sale">${icons.sale}<span>Yeni satış</span></button>
-          <button class="quick-action" type="button" data-quick="rx">${icons.rx}<span>Yeni reçete</span></button>
-          <button class="quick-action" type="button" data-quick="product">${icons.box}<span>Yeni ürün</span></button>
+          ${quickActionHTML("customer", icons.users, "Yeni müşteri", "Kişi ve iletişim bilgileri")}
+          ${quickActionHTML("sale", icons.sale, "Yeni satış", "Ürün ve tahsilat kaydı")}
+          ${quickActionHTML("rx", icons.rx, "Yeni reçete", "Göz ölçümü ve doktor")}
+          ${quickActionHTML("product", icons.box, "Yeni ürün", "Stok kartı oluştur")}
         </div>`;
     }, 240);
   }
@@ -179,7 +204,36 @@
     if (storeLabel && DB && DB.settings) storeLabel.textContent = DB.settings.magazaAdi || "Kaner Optik";
     const dot = document.getElementById("mobileAlertDot");
     if (dot) dot.hidden = computeAlerts().length === 0;
+    enhanceMobileHeading();
     enhanceTables();
+  }
+
+  function mobileSummary(view) {
+    if (view === "dashboard") return `${DB.customers.length} müşteri · ${DB.sales.length} satış`;
+    if (view === "customers") return `${DB.customers.length} kayıt`;
+    if (view === "prescriptions") return `${DB.prescriptions.length} reçete`;
+    if (view === "sales") return `${DB.sales.length} satış işlemi`;
+    if (view === "inventory") return `${DB.products.reduce((sum, item) => sum + (Number(item.stok) || 0), 0)} ürün stokta`;
+    if (view === "reports") return "Satış ve performans görünümü";
+    return (VIEW_META[view] || VIEW_META.dashboard).subtitle;
+  }
+
+  function enhanceMobileHeading() {
+    const container = document.getElementById("viewContainer");
+    if (!container || container.querySelector(":scope > .mobile-view-heading")) return;
+    const meta = VIEW_META[currentView] || VIEW_META.dashboard;
+    const action = contextActions[currentView];
+    const heading = document.createElement("section");
+    heading.className = "mobile-view-heading";
+    heading.innerHTML = `
+      <div class="mobile-view-copy">
+        <span class="mobile-view-eyebrow">${mobileSummary(currentView)}</span>
+        <h1>${escapeHTML(meta.title)}</h1>
+        <p>${escapeHTML(meta.subtitle || "Kaner Optik çalışma alanı")}</p>
+      </div>
+      ${action ? `<button class="mobile-context-action" type="button" data-context-action="${action[0]}">${action[2]}<span>${action[1]}</span></button>` : ""}`;
+    container.prepend(heading);
+    heading.querySelector("[data-context-action]")?.addEventListener("click", event => runQuickAction(event.currentTarget.dataset.contextAction));
   }
 
   function enhanceTables() {
@@ -189,8 +243,13 @@
       wrap.classList.add("mobile-table");
       const labels = Array.from(table.querySelectorAll("thead th")).map(th => th.textContent.trim().replace(/[▲▼]/g, ""));
       table.querySelectorAll("tbody tr").forEach(row => {
-        Array.from(row.children).forEach((cell, index) => {
+        const cells = Array.from(row.children);
+        row.classList.add("mobile-card-row");
+        cells.forEach((cell, index) => {
           if (!cell.dataset.label && labels[index]) cell.dataset.label = labels[index];
+          cell.classList.toggle("mobile-cell-primary", index === 0);
+          cell.classList.toggle("mobile-cell-trailing", index === cells.length - 1);
+          if (index > 0 && index < cells.length - 1) cell.classList.add("mobile-cell-meta");
         });
       });
     });
@@ -207,6 +266,23 @@
     pill.classList.add("show");
     window.clearTimeout(updateConnectivity.timeout);
     updateConnectivity.timeout = window.setTimeout(() => pill.classList.remove("show"), online ? 1800 : 5000);
+  }
+
+  function syncVisualViewport() {
+    const viewport = window.visualViewport;
+    const visibleHeight = viewport ? viewport.height : window.innerHeight;
+    const offsetTop = viewport ? viewport.offsetTop : 0;
+    if (Math.abs(window.innerWidth - viewportBaselineWidth) > 80) {
+      viewportBaselineWidth = window.innerWidth;
+      viewportBaselineHeight = Math.max(window.innerHeight, document.documentElement.clientHeight, visibleHeight + offsetTop);
+    }
+    const layoutHeight = Math.max(viewportBaselineHeight, document.documentElement.clientHeight, window.innerHeight);
+    const keyboardHeight = Math.max(0, layoutHeight - visibleHeight - offsetTop);
+    if (keyboardHeight < 120) viewportBaselineHeight = Math.max(layoutHeight, visibleHeight + offsetTop);
+    document.documentElement.style.setProperty("--visual-viewport-height", `${Math.round(visibleHeight)}px`);
+    document.documentElement.style.setProperty("--visual-viewport-offset", `${Math.round(offsetTop)}px`);
+    document.documentElement.style.setProperty("--keyboard-height", `${Math.round(keyboardHeight)}px`);
+    document.body.classList.toggle("keyboard-open", keyboardHeight > 140);
   }
 
   createMobileShell();
@@ -239,7 +315,13 @@
   window.addEventListener("online", updateConnectivity);
   window.addEventListener("offline", updateConnectivity);
   window.addEventListener("resize", syncMobileShell, { passive: true });
+  window.addEventListener("orientationchange", () => setTimeout(() => { syncVisualViewport(); syncMobileShell(); }, 120), {passive:true});
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", syncVisualViewport, {passive:true});
+    window.visualViewport.addEventListener("scroll", syncVisualViewport, {passive:true});
+  }
 
+  syncVisualViewport();
   syncMobileShell();
   updateConnectivity();
 
