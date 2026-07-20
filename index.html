@@ -520,7 +520,7 @@
   }
 </style>
 </head>
-<body>
+<body class="firebase-pending">
 
 <div class="app">
   <aside class="sidebar" id="sidebar">
@@ -709,6 +709,9 @@ function saveDB(){
   updateNavCounts();
   updateSidebarBrand();
   refreshBellBadge();
+  if(!window.__KANER_CLOUD_APPLYING__){
+    window.dispatchEvent(new CustomEvent("kaner:db-changed", {detail: JSON.parse(JSON.stringify(DB))}));
+  }
 }
 
 function uid(prefix){
@@ -2999,8 +3002,24 @@ function init(){
 }
 
 init();
+
+window.KanerApp = {
+  snapshot(){ return JSON.parse(JSON.stringify(DB)); },
+  applyCloud(nextDB){
+    window.__KANER_CLOUD_APPLYING__ = true;
+    DB = migrateDB(nextDB);
+    localStorage.setItem(DB_KEY, JSON.stringify(DB));
+    updateNavCounts();
+    updateSidebarBrand();
+    refreshBellBadge();
+    render();
+    window.__KANER_CLOUD_APPLYING__ = false;
+  },
+  toast(message, type){ showToast(message, type); }
+};
 </script>
 <link rel="stylesheet" href="assets/enterprise.css">
 <script src="assets/mobile.js" defer></script>
+<script type="module" src="assets/firebase-sync.js"></script>
 </body>
 </html>
