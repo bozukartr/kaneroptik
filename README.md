@@ -13,7 +13,8 @@ Kaner Optik için saf HTML, CSS ve JavaScript ile geliştirilmiş; masaüstü ve
 - Ürün/stok yönetimi ve kritik stok uyarıları
 - Ciro, ödeme ve müşteri raporları
 - CSV dışa aktarma ve JSON yedekleme/geri yükleme
-- Mobil alt navigasyon ve hızlı işlem menüsü
+- Mobil alt navigasyon (Panel, Müşteri, Reçete, Satış, Stok) ve "Daha" sayfası
+- Mobil hızlı işlem menüsü ve bağlama duyarlı eylem düğmesi
 - iPhone/iPad Safari safe-area, yatay kullanım ve klavye optimizasyonu
 - Karanlık tema ve erişilebilir hareket tercihleri
 
@@ -49,6 +50,7 @@ npx firebase-tools deploy
 
 - Müşteri, reçete, satış ve stok kayıtları Firestore ile cihazlar arasında senkronize edilir.
 - Firestore'un çevrimdışı önbelleği sayesinde bağlantı kesildiğinde çalışmaya devam eder.
+- Firebase SDK'sına ulaşılamazsa cihazda kayıtlı PIN ile çevrimdışı modda açılır; değişiklikler yerelde saklanır ve bağlantı geri geldiğinde senkronize edilir. PIN kurulmamış bir cihazda ise açıklayıcı bir hata ekranı gösterilir.
 - PIN PBKDF2/SHA-256 ile özetlenerek yalnızca ilgili cihazda saklanır.
 - Beş hatalı PIN denemesinden sonra 30 saniyelik kilit uygulanır.
 - 15 dakika işlem yapılmadığında uygulama otomatik kilitlenir.

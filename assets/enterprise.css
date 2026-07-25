@@ -224,7 +224,7 @@ body.dark-mode .rx-quick-customer { background: #19272a; }
   position: fixed;
   right: 14px;
   bottom: 14px;
-  z-index: 260;
+  z-index: 95;
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -244,6 +244,9 @@ body.dark-mode .rx-quick-customer { background: #19272a; }
 .connectivity-pill.show { opacity: 1; transform: none; }
 .connectivity-pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
 .connectivity-pill.offline::before { background: var(--danger); }
+/* Must sit under the modal (100) and the command palette (150); it used to float on top of both. */
+body.scroll-locked .connectivity-pill,
+body.app-locked .connectivity-pill { opacity: 0 !important; }
 
 .mobile-appbar, .mobile-bottom-nav, .mobile-fab, .quick-sheet-overlay, .mobile-view-heading { display: none; }
 
@@ -349,7 +352,7 @@ body.dark-mode fieldset { background: #142023; }
     bottom: calc(8px + env(safe-area-inset-bottom));
     height: 67px;
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(6, 1fr);
     align-items: center;
     padding: 5px;
     border: 1px solid rgba(212,223,225,.9);
@@ -634,6 +637,15 @@ body.dark-mode fieldset { background: #142023; }
   .quick-action strong { display: block; font-size: 12.5px; }
   .quick-action small { display: block; margin-top: 3px; color: var(--ink-soft); font-size: 9.5px; font-weight: 500; line-height: 1.3; }
   .quick-action:active { transform: scale(.97); border-color: var(--teal); }
+  /* Horizontal variant used by the "Daha" sheet. */
+  .quick-action-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 13px;
+    min-height: 62px;
+  }
+  .quick-action-row svg { width: 21px; height: 21px; flex-shrink: 0; }
 
   .rx-customer-picker { margin: 0 -2px 14px; padding: 12px; border-radius: 15px; }
   .rx-customer-select-row { grid-template-columns: 1fr; }
@@ -739,6 +751,94 @@ body.dark-mode fieldset { background: #142023; }
   .mobile-fab { width: 49px; height: 49px; bottom: calc(75px + var(--safe-bottom)); }
   .mobile-view-heading { min-height: 70px; }
   .quick-sheet { max-width: 620px; margin: 0 auto; border-radius: 24px 24px 0 0; }
+}
+
+/* Mobile usability pass: touch targets, density, and layout containment */
+@media (max-width: 900px), (max-width: 1024px) and (orientation: landscape) and (hover: none) {
+  /* Grid items default to min-width:auto, so a wide child (the 12-month bar chart)
+     forces the whole page wider than the viewport and the browser zooms the page
+     out to fit. Letting items shrink lets the chart's own overflow-x take over. */
+  .grid > * { min-width: 0; }
+  .bar-chart {
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    /* Fade the left edge so the off-screen months read as scrollable. */
+    mask-image: linear-gradient(90deg, transparent 0, #000 18px);
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 18px);
+  }
+
+  /* Touch targets: 34px icon buttons sat side by side inside tappable rows. */
+  .btn-icon { min-width: 44px; min-height: 44px; }
+  .row-actions { gap: 8px; }
+  .page-btn { width: 40px; height: 40px; }
+  .chip { min-height: 38px; padding: 8px 14px; }
+  .tab { padding: 12px 4px; }
+  .settings-nav button { min-height: 44px; }
+
+  /* The identifying cell is no longer always first in DOM order, so pin both it and
+     the actions cell to the card's top row explicitly. */
+  .mobile-table .mobile-cell-primary { order: -1; grid-column: 1; grid-row: 1; }
+  .mobile-table .mobile-cell-trailing { order: -1; }
+  /* The headline cell speaks for itself; its column label is noise. */
+  .mobile-table .mobile-cell-primary::before { display: none; }
+
+  /* Touch feedback: these rows only ever had :hover, which never fires on a phone. */
+  tbody tr.clickable:active,
+  .mobile-table .mobile-card-row:active { background: var(--teal-tint); }
+  .list-row-btn:active, .subcard:active { background: var(--teal-tint); }
+
+  /* Stat cards were reserving 139px for ~70px of content. */
+  .stat-card { min-height: 0; padding: 14px; }
+  .stat-value { font-size: 22px; }
+
+  /* The view heading already names the screen and offers the primary action;
+     the toolbar's duplicate primary button is redundant on a phone. */
+  #viewContainer:has(.mobile-context-action) .toolbar-right { grid-template-columns: 1fr; }
+  #viewContainer:has(.mobile-context-action) .toolbar-right .btn-primary { display: none; }
+
+  /* Customer detail: name, tags and phone were crushed against the action buttons. */
+  .detail-header { flex-direction: column; align-items: stretch; gap: 14px; }
+  .detail-header > div:last-child { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .detail-header > div:last-child .btn { justify-content: center; min-height: 44px; }
+  .detail-title-row { align-items: flex-start; }
+  .detail-meta-link { min-height: 34px; align-items: center; }
+  .subcard-head { flex-wrap: wrap; gap: 8px; }
+
+  /* Diopters are 5 characters wide; one full-width row each meant ~1400px of scrolling. */
+  .rx-eye-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
+  fieldset { padding: 12px 12px 4px; }
+
+  /* Each product line becomes a grouped card instead of four fields jammed together
+     (.form-row-4 collapses to one column with gap:0 on mobile). */
+  .sale-item-row {
+    gap: 12px 0;
+    margin-bottom: 12px !important;
+    padding: 13px;
+    border: 1px solid var(--mist);
+    border-radius: 14px;
+    background: var(--paper);
+  }
+  .sale-item-row .field { margin-bottom: 0; }
+  .sale-item-row .btn-icon { flex-shrink: 0; }
+
+  /* Keep the status pill clear of the floating action button. */
+  .connectivity-pill {
+    right: auto;
+    left: max(14px, calc(var(--safe-left) + 12px));
+  }
+
+  .invoice-doc { padding: 18px 14px; }
+  .invoice-doc.thermal { padding: 16px 12px; }
+  .invoice-totals { width: 100%; }
+  .invoice-title { font-size: 11px; letter-spacing: 1.2px; }
+}
+
+@media print {
+  /* The mobile rules above also match print (paper is narrower than 900px), and their
+     viewport-height cap would otherwise slice a long invoice off at one screen. */
+  .modal, .modal-body { max-height: none !important; }
+  .modal-overlay { position: absolute !important; top: 0 !important; height: auto !important; min-height: 0 !important; display: block !important; }
+  .connectivity-pill, .mobile-appbar, .mobile-bottom-nav, .mobile-fab, .mobile-view-heading { display: none !important; }
 }
 
 @media (prefers-contrast: more) {
