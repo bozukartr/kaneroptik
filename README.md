@@ -47,6 +47,15 @@ Uygulama açılışta kimlik doğrulama istemez; arka planda sessizce anonim otu
 doğrudan panele düşer. Anonymous yöntemi etkin değilse uygulama yine açılır, yalnızca
 bulut senkronizasyonu devre dışı kalır ve veriler cihazda tutulur.
 
+Bağlantı kurulamazsa nedenini ve çözümünü **Ayarlar > Veri Yönetimi > Bulut
+senkronizasyonu** kartında görebilirsiniz. Konsolda gerekli ayarı yaptıktan sonra
+karttaki "Tekrar dene" düğmesi sayfayı yenilemeden bağlanmayı dener.
+
+Eski sürümden geçiyorsanız iki adımı da yapmanız gerekir: Anonymous sağlayıcısını
+etkinleştirmek **ve** bu depodaki güncel `firestore.rules` dosyasını yayınlamak. Eski
+kurallar yalnızca `admin@kaneroptik.app` hesabına izin verdiği için anonim oturum
+`permission-denied` alır.
+
 ## Veri saklama ve güvenlik
 
 - Müşteri, reçete, satış ve stok kayıtları Firestore ile cihazlar arasında senkronize edilir.
