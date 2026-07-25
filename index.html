@@ -533,7 +533,7 @@
   }
 </style>
 </head>
-<body class="firebase-pending">
+<body>
 
 <div class="app">
   <aside class="sidebar" id="sidebar">
@@ -3153,26 +3153,6 @@ function init(){
 }
 
 init();
-
-/* The app stays hidden behind `body.firebase-pending` until firebase-sync.js puts up
-   the PIN gate. That module depends on three cross-origin ESM imports, so a blocked or
-   unreachable CDN used to leave nothing but a blank screen. Show an explicit, retryable
-   error instead — and keep the data hidden, since the PIN gate never ran. */
-const GATE_FAILSAFE_MS = 8000;
-window.__kanerGateFailsafe = setTimeout(()=>{
-  if(document.getElementById("firebaseGate")) return;
-  const fallback = document.createElement("div");
-  fallback.className = "firebase-gate";
-  fallback.id = "firebaseGateFallback";
-  fallback.innerHTML = `
-    <main class="firebase-gate-card">
-      <h1>Bağlantı kurulamadı</h1>
-      <p class="firebase-gate-copy">Güvenli oturum bileşenleri yüklenemedi. İnternet bağlantınızı kontrol edip tekrar deneyin. Verileriniz bu cihazda korunuyor.</p>
-      <button class="btn btn-primary firebase-gate-submit" type="button" id="gateRetryBtn">Yeniden dene</button>
-    </main>`;
-  document.body.appendChild(fallback);
-  document.getElementById("gateRetryBtn").addEventListener("click", ()=> location.reload());
-}, GATE_FAILSAFE_MS);
 
 window.KanerApp = {
   snapshot(){ return JSON.parse(JSON.stringify(DB)); },

@@ -34,25 +34,31 @@ Uygulama `kaneroptik` Firebase projesine bağlıdır. Derleme veya npm paketi ge
 
 İlk kurulumdan önce Firebase Console'da:
 
-1. **Authentication > Sign-in method** bölümünden Email/Password yöntemini etkinleştirin.
-2. **Authentication > Users** bölümünde `admin@kaneroptik.app` kullanıcısını güçlü bir parolayla oluşturun.
-3. **Firestore Database** bölümünden veritabanını oluşturun.
-4. Bu repodaki güvenlik kurallarını ve uygulamayı yayınlayın:
+1. **Authentication > Sign-in method** bölümünden **Anonymous** yöntemini etkinleştirin.
+2. **Firestore Database** bölümünden veritabanını oluşturun.
+3. Bu repodaki güvenlik kurallarını ve uygulamayı yayınlayın:
 
 ```bash
 npx firebase-tools login
 npx firebase-tools deploy
 ```
 
-İlk açılışta Firebase yönetici parolası yalnızca cihazı yetkilendirmek için bir kez istenir ve cihazda saklanmaz. Ardından belirlenen 4 haneli PIN kullanılır.
+Uygulama açılışta kimlik doğrulama istemez; arka planda sessizce anonim oturum açar ve
+doğrudan panele düşer. Anonymous yöntemi etkin değilse uygulama yine açılır, yalnızca
+bulut senkronizasyonu devre dışı kalır ve veriler cihazda tutulur.
 
 ## Veri saklama ve güvenlik
 
 - Müşteri, reçete, satış ve stok kayıtları Firestore ile cihazlar arasında senkronize edilir.
 - Firestore'un çevrimdışı önbelleği sayesinde bağlantı kesildiğinde çalışmaya devam eder.
-- Firebase SDK'sına ulaşılamazsa cihazda kayıtlı PIN ile çevrimdışı modda açılır; değişiklikler yerelde saklanır ve bağlantı geri geldiğinde senkronize edilir. PIN kurulmamış bir cihazda ise açıklayıcı bir hata ekranı gösterilir.
-- PIN PBKDF2/SHA-256 ile özetlenerek yalnızca ilgili cihazda saklanır.
-- Beş hatalı PIN denemesinden sonra 30 saniyelik kilit uygulanır.
-- 15 dakika işlem yapılmadığında uygulama otomatik kilitlenir.
-- Firestore kuralları yalnızca `admin@kaneroptik.app` hesabına erişim verir.
-- Ayarlar > Veri Yönetimi bölümünden ayrıca JSON yedeği alınabilir.
+- Firebase SDK'sına ulaşılamazsa uygulama yine doğrudan açılır ve yerel modda çalışır;
+  değişiklikler cihazda saklanır ve bağlantı geri geldiğinde senkronize edilir.
+- Ayarlar > Veri Yönetimi bölümünden JSON yedeği alınabilir.
+
+> **Erişim uyarısı.** Uygulamada kilit ekranı, PIN veya oturum açma adımı yoktur:
+> uygulamayı açan herkes aynı müşteri, reçete ve satış kayıtlarının tamamını görür ve
+> düzenleyebilir. Firestore kuralları da adlandırılmış tek bir hesap yerine herhangi bir
+> anonim oturuma izin verir; proje yapılandırması istemci kodunda yer aldığı için
+> uygulamanın yayınlandığı adrese ulaşan herkes veritabanına erişebilir. Kayıtlar ad,
+> soyad, telefon, TC kimlik numarası ve reçete bilgisi içerdiğinden dağıtımı yalnızca
+> mağaza içi/özel bir adresle sınırlamanız önerilir.
