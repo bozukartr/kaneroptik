@@ -1,30 +1,32 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
-import {
-  getAuth,
-  setPersistence,
-  browserLocalPersistence,
-  onAuthStateChanged,
-  signInWithEmailAndPassword
-} from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
-import {
-  initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  onSnapshot,
-  writeBatch,
-  setDoc
-} from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 import { firebaseConfig, storeConfig } from "./firebase-config.js";
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
-});
+/* The Firebase SDK lives on a cross-origin CDN. Static imports would abort this whole
+   module when that CDN is unreachable, leaving the app hidden behind
+   `body.firebase-pending` with no gate and no error. Load it dynamically instead so the
+   gate is always painted and an offline device can still unlock with its local PIN. */
+const FIREBASE_CDN = "https://www.gstatic.com/firebasejs/12.16.0/";
+
+let setPersistence, browserLocalPersistence, onAuthStateChanged, signInWithEmailAndPassword;
+let collection, doc, getDoc, getDocs, onSnapshot, writeBatch, setDoc;
+let auth = null;
+let db = null;
+let cloudAvailable = false;
+
+async function loadFirebase(){
+  const [appModule, authModule, storeModule] = await Promise.all([
+    import(`${FIREBASE_CDN}firebase-app.js`),
+    import(`${FIREBASE_CDN}firebase-auth.js`),
+    import(`${FIREBASE_CDN}firebase-firestore.js`)
+  ]);
+  ({setPersistence, browserLocalPersistence, onAuthStateChanged, signInWithEmailAndPassword} = authModule);
+  ({collection, doc, getDoc, getDocs, onSnapshot, writeBatch, setDoc} = storeModule);
+  const app = appModule.initializeApp(firebaseConfig);
+  auth = authModule.getAuth(app);
+  db = storeModule.initializeFirestore(app, {
+    localCache: storeModule.persistentLocalCache({tabManager: storeModule.persistentMultipleTabManager()})
+  });
+  cloudAvailable = true;
+}
 
 const DATA_GROUPS = ["customers", "prescriptions", "sales", "products"];
 const PIN_HASH_KEY = "kaneroptik_pin_hash_v1";
@@ -46,6 +48,8 @@ function logoSVG(){
 }
 
 function createGate(){
+  clearTimeout(window.__kanerGateFailsafe);
+  document.getElementById("firebaseGateFallback")?.remove();
   const gate = document.createElement("div");
   gate.id = "firebaseGate";
   gate.className = "firebase-gate";
@@ -58,6 +62,29 @@ function createGate(){
 
 const gate = createGate();
 const gateCard = gate.querySelector("#firebaseGateCard");
+
+function showConnecting(){
+  gate.dataset.mode = "connecting";
+  gateShell(`
+    <h1>Bağlanılıyor…</h1>
+    <p class="firebase-gate-copy">Güvenli oturum hazırlanıyor.</p>
+    <div class="firebase-gate-status">Firebase ile güvenli bağlantı</div>`);
+}
+
+function showConnectionError(){
+  gate.dataset.mode = "offline-error";
+  gate.classList.remove("is-hidden");
+  document.body.classList.add("app-locked");
+  // No PIN was ever verified on this device, so keep the records fully hidden rather
+  // than merely blurred behind the gate.
+  document.body.classList.add("firebase-pending");
+  gateShell(`
+    <h1>Bağlantı kurulamadı</h1>
+    <p class="firebase-gate-copy">Güvenli oturum bileşenleri yüklenemedi ve bu cihazda kayıtlı bir PIN yok. İnternet bağlantınızı kontrol edip tekrar deneyin.</p>
+    <button class="btn btn-primary firebase-gate-submit" type="button" id="gateRetry">Yeniden dene</button>
+    <div class="firebase-gate-help">Verileriniz bu cihazda korunuyor; hiçbir kayıt silinmedi.</div>`);
+  gateCard.querySelector("#gateRetry").addEventListener("click", () => location.reload());
+}
 
 function gateShell(content){
   gateCard.innerHTML = `
@@ -138,7 +165,7 @@ function showUnlock(message = ""){
       <button class="btn btn-primary firebase-gate-submit" type="submit">Uygulamayı aç</button>
       <div class="firebase-gate-message" id="gateMessage">${escapeText(message)}</div>
     </form>
-    <div class="firebase-gate-status">Firebase ile güvenli bağlantı</div>`);
+    <div class="firebase-gate-status">${cloudAvailable ? "Firebase ile güvenli bağlantı" : "Çevrimdışı mod · yalnızca bu cihazdaki veriler"}</div>`);
   gateCard.querySelector("#gateForm").addEventListener("submit", handleUnlock);
   gateCard.querySelector("#gatePin").focus();
 }
@@ -253,10 +280,18 @@ async function unlockApp(){
   gate.classList.add("is-hidden");
   document.body.classList.remove("app-locked");
   resetInactivityTimer();
+  if(!cloudAvailable){
+    window.KanerApp.toast("Çevrimdışı mod: değişiklikler bu cihazda saklanıyor.", "error");
+    return;
+  }
   if(!cloudStarted) await startCloudSync();
 }
 
 function lockApp(reason = ""){
+  if(!cloudAvailable){
+    if(localStorage.getItem(PIN_HASH_KEY)) return showUnlock(reason);
+    return showConnectionError();
+  }
   if(!auth.currentUser) return showDeviceSetup();
   showUnlock(reason);
 }
@@ -426,10 +461,26 @@ window.addEventListener("kaner:db-changed", event => queueCloudWrite(event.detai
 ["pointerdown","keydown","touchstart"].forEach(name => document.addEventListener(name, resetInactivityTimer, {passive:true}));
 document.addEventListener("visibilitychange", () => { if(!document.hidden) resetInactivityTimer(); });
 
-setPersistence(auth, browserLocalPersistence).catch(() => {});
-onAuthStateChanged(auth, user => {
-  addManualLockButtons();
-  if(!user){ showDeviceSetup(); return; }
-  if(!localStorage.getItem(PIN_HASH_KEY)) showPinSetup();
-  else showUnlock();
-});
+async function bootstrap(){
+  showConnecting();
+  try{
+    await loadFirebase();
+  }catch(error){
+    console.error("Firebase SDK yüklenemedi:", error);
+    addManualLockButtons();
+    // A locally stored PIN is verified with WebCrypto alone, so a device that has
+    // already been set up can still get in and keep working against localStorage.
+    if(localStorage.getItem(PIN_HASH_KEY)) showUnlock("Bulut bağlantısı yok; çevrimdışı modda açılıyor.");
+    else showConnectionError();
+    return;
+  }
+  setPersistence(auth, browserLocalPersistence).catch(() => {});
+  onAuthStateChanged(auth, user => {
+    addManualLockButtons();
+    if(!user){ showDeviceSetup(); return; }
+    if(!localStorage.getItem(PIN_HASH_KEY)) showPinSetup();
+    else showUnlock();
+  });
+}
+
+bootstrap();

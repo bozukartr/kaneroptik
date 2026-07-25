@@ -12,15 +12,24 @@
     bell: '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>',
     plus: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3"><path d="M12 5v14M5 12h14"/></svg>',
     rx: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7.5" cy="12" r="4"/><circle cx="16.5" cy="12" r="4"/><path d="M11.3 11c0-1.3.8-2.2 2-2.2M3 11.5c.7-1.5 1.6-2.2 2.7-2.4"/></svg>',
-    moon: '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 15.2A8.5 8.5 0 0 1 8.8 4a8.5 8.5 0 1 0 11.2 11.2z"/></svg>'
+    moon: '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 15.2A8.5 8.5 0 0 1 8.8 4a8.5 8.5 0 1 0 11.2 11.2z"/></svg>',
+    gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.1 14.5a1.7 1.7 0 0 0 .34 1.87l.06.07a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.12a1.7 1.7 0 0 0-2.9-1.2l-.06.06a2 2 0 1 1-2.83-2.83l.06-.07A1.7 1.7 0 0 0 3.3 14.5H3a2 2 0 1 1 0-4h.12a1.7 1.7 0 0 0 1.2-2.9l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 2.9-1.2V3a2 2 0 1 1 4 0v.12a1.7 1.7 0 0 0 2.9 1.2l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0 1.2 2.9H21a2 2 0 1 1 0 4h-.12a1.7 1.7 0 0 0-1.78 1.45z"/></svg>',
+    more: '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>'
   };
 
+  // Reçeteler is a core module for an optician and used to be reachable only through
+  // the command palette; Raporlar and Ayarlar now live behind the "Daha" sheet.
   const mobileViews = [
     ["dashboard", "Panel", icons.home],
-    ["customers", "Müşteriler", icons.users],
-    ["sales", "Satışlar", icons.sale],
-    ["inventory", "Stok", icons.box],
-    ["reports", "Raporlar", icons.chart]
+    ["customers", "Müşteri", icons.users],
+    ["prescriptions", "Reçete", icons.rx],
+    ["sales", "Satış", icons.sale],
+    ["inventory", "Stok", icons.box]
+  ];
+
+  const moreViews = [
+    ["reports", "Raporlar", icons.chart, "Ciro, ödeme ve müşteri analizleri"],
+    ["settings", "Ayarlar", icons.gear, "Mağaza, fatura ve veri yönetimi"]
   ];
 
   const contextActions = {
@@ -54,7 +63,8 @@
     nav.setAttribute("aria-label", "Ana navigasyon");
     nav.innerHTML = mobileViews.map(([view, label, icon]) =>
       `<button class="mobile-nav-item" type="button" data-mobile-view="${view}" aria-label="${label}">${icon}<span>${label}</span></button>`
-    ).join("");
+    ).join("") +
+      `<button class="mobile-nav-item" type="button" id="mobileMore" aria-label="Daha fazla">${icons.more}<span>Daha</span></button>`;
 
     const fab = document.createElement("button");
     fab.className = "mobile-fab";
@@ -94,6 +104,7 @@
     nav.querySelectorAll("[data-mobile-view]").forEach(button => {
       button.addEventListener("click", () => { touchFeedback(); navigate(button.dataset.mobileView); });
     });
+    nav.querySelector("#mobileMore").addEventListener("click", () => { touchFeedback(); openMoreSheet(); });
     fab.addEventListener("click", () => { touchFeedback(); toggleQuickSheet(true); });
     sheet.addEventListener("click", event => {
       if (event.target === sheet) toggleQuickSheet(false);
@@ -110,12 +121,17 @@
     if (navigator.vibrate) navigator.vibrate(8);
   }
 
+  let sheetLocked = false;
   function toggleQuickSheet(open) {
     const sheet = document.getElementById("quickSheet");
     sheet.classList.toggle("open", open);
     sheet.setAttribute("aria-hidden", String(!open));
     document.getElementById("mobileFab").setAttribute("aria-expanded", String(open));
-    document.body.style.overflow = open ? "hidden" : "";
+    // Shared with the modal so the two never fight over the body's scroll position.
+    if (open !== sheetLocked) {
+      sheetLocked = open;
+      lockBodyScroll(open);
+    }
     const app = document.querySelector(".app");
     if (app && "inert" in app) app.inert = open;
     if (open) setTimeout(() => sheet.querySelector(".quick-action, .alert-item, [data-sheet-close]")?.focus(), 180);
@@ -162,6 +178,38 @@
     toggleQuickSheet(true);
   }
 
+  function openMoreSheet() {
+    const sheet = document.getElementById("quickSheet");
+    const panel = sheet.querySelector(".quick-sheet");
+    const dark = document.body.classList.contains("dark-mode");
+    panel.innerHTML = `
+      <div class="sheet-handle"></div>
+      <h2>Daha fazla</h2>
+      <p>Diğer bölümler ve görünüm tercihleri.</p>
+      <div class="stack-8">
+        ${moreViews.map(([view, label, icon, description]) => `
+          <button class="quick-action quick-action-row" type="button" data-more-view="${view}">
+            ${icon}<span><strong>${label}</strong><small>${description}</small></span>
+          </button>`).join("")}
+        <button class="quick-action quick-action-row" type="button" data-more-theme>
+          ${icons.moon}<span><strong>${dark ? "Açık tema" : "Koyu tema"}</strong><small>Görünümü değiştir</small></span>
+        </button>
+      </div>`;
+    panel.querySelectorAll("[data-more-view]").forEach(button => {
+      button.addEventListener("click", () => {
+        toggleQuickSheet(false);
+        navigate(button.dataset.moreView);
+        restoreQuickSheet();
+      });
+    });
+    panel.querySelector("[data-more-theme]").addEventListener("click", () => {
+      toggleTheme();
+      toggleQuickSheet(false);
+      restoreQuickSheet();
+    });
+    toggleQuickSheet(true);
+  }
+
   function restoreQuickSheet() {
     setTimeout(() => {
       const panel = document.querySelector("#quickSheet .quick-sheet");
@@ -198,6 +246,13 @@
       if (active) item.setAttribute("aria-current", "page");
       else item.removeAttribute("aria-current");
     });
+    const moreButton = document.getElementById("mobileMore");
+    if (moreButton) {
+      const inMore = moreViews.some(([view]) => view === currentRoot);
+      moreButton.classList.toggle("active", inMore);
+      if (inMore) moreButton.setAttribute("aria-current", "page");
+      else moreButton.removeAttribute("aria-current");
+    }
     const viewLabel = document.getElementById("mobileViewName");
     if (viewLabel) viewLabel.textContent = (VIEW_META[currentView] || VIEW_META.dashboard).title;
     const storeLabel = document.getElementById("mobileStoreName");
@@ -206,6 +261,18 @@
     if (dot) dot.hidden = computeAlerts().length === 0;
     enhanceMobileHeading();
     enhanceTables();
+    alignCharts();
+  }
+
+  // A scrollable revenue chart otherwise opens on the oldest months, hiding the
+  // recent ones that actually matter behind a horizontal scroll.
+  function alignCharts() {
+    document.querySelectorAll("#viewContainer .bar-chart").forEach(chart => {
+      if (chart.dataset.aligned === "1") return;
+      if (chart.scrollWidth <= chart.clientWidth) return;
+      chart.dataset.aligned = "1";
+      chart.scrollLeft = chart.scrollWidth;
+    });
   }
 
   function mobileSummary(view) {
@@ -221,15 +288,19 @@
   function enhanceMobileHeading() {
     const container = document.getElementById("viewContainer");
     if (!container || container.querySelector(":scope > .mobile-view-heading")) return;
+    // The customer detail screen already leads with the customer's name and a back
+    // link; a generic "Müşteri Detayı" banner above it is pure duplication.
+    if (currentView === "customerDetail") return;
     const meta = VIEW_META[currentView] || VIEW_META.dashboard;
     const action = contextActions[currentView];
+    const summary = mobileSummary(currentView);
     const heading = document.createElement("section");
     heading.className = "mobile-view-heading";
     heading.innerHTML = `
       <div class="mobile-view-copy">
-        <span class="mobile-view-eyebrow">${mobileSummary(currentView)}</span>
+        ${summary ? `<span class="mobile-view-eyebrow">${escapeHTML(summary)}</span>` : ""}
         <h1>${escapeHTML(meta.title)}</h1>
-        <p>${escapeHTML(meta.subtitle || "Kaner Optik çalışma alanı")}</p>
+        ${meta.subtitle ? `<p>${escapeHTML(meta.subtitle)}</p>` : ""}
       </div>
       ${action ? `<button class="mobile-context-action" type="button" data-context-action="${action[0]}">${action[2]}<span>${action[1]}</span></button>` : ""}`;
     container.prepend(heading);
@@ -242,14 +313,18 @@
       if (!table) return;
       wrap.classList.add("mobile-table");
       const labels = Array.from(table.querySelectorAll("thead th")).map(th => th.textContent.trim().replace(/[▲▼]/g, ""));
+      // "First column" is not always the identifying one — the stock table leads with a
+      // category badge and the sales table with an invoice number.
+      const primary = Number(table.dataset.primaryCol) || 0;
       table.querySelectorAll("tbody tr").forEach(row => {
         const cells = Array.from(row.children);
+        const trailing = cells.length - 1;
         row.classList.add("mobile-card-row");
         cells.forEach((cell, index) => {
           if (!cell.dataset.label && labels[index]) cell.dataset.label = labels[index];
-          cell.classList.toggle("mobile-cell-primary", index === 0);
-          cell.classList.toggle("mobile-cell-trailing", index === cells.length - 1);
-          if (index > 0 && index < cells.length - 1) cell.classList.add("mobile-cell-meta");
+          cell.classList.toggle("mobile-cell-primary", index === primary);
+          cell.classList.toggle("mobile-cell-trailing", index === trailing);
+          cell.classList.toggle("mobile-cell-meta", index !== primary && index !== trailing);
         });
       });
     });
@@ -314,7 +389,13 @@
   });
   window.addEventListener("online", updateConnectivity);
   window.addEventListener("offline", updateConnectivity);
-  window.addEventListener("resize", syncMobileShell, { passive: true });
+  // syncMobileShell recomputes alerts and re-walks every table, so keep it off the
+  // per-frame resize stream the on-screen keyboard generates.
+  let resizeTimer;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(syncMobileShell, 150);
+  }, { passive: true });
   window.addEventListener("orientationchange", () => setTimeout(() => { syncVisualViewport(); syncMobileShell(); }, 120), {passive:true});
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", syncVisualViewport, {passive:true});
