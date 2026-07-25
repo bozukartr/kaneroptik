@@ -29,25 +29,71 @@ function clearLegacyPinState(){
   LEGACY_PIN_KEYS.forEach(key => localStorage.removeItem(key));
 }
 
+function report(state, title, hint){
+  window.KanerApp.setCloudStatus({state, title, hint: hint || ""});
+}
+
+/* "Çevrimdışı" on its own is not actionable — a project can be fully set up and still
+   fail here because the console is missing one switch or the rules were never
+   redeployed. Name the actual cause and the fix. */
+function describeError(error){
+  const code = (error && (error.code || error.message)) || "";
+  if(/auth\/(operation-not-allowed|admin-restricted-operation)/.test(code)) return {
+    title: "Anonim giriş kapalı",
+    hint: "Firebase Console > Authentication > Sign-in method bölümünden \"Anonymous\" sağlayıcısını etkinleştirin."
+  };
+  if(/auth\/(api-key-not-valid|invalid-api-key)/.test(code)) return {
+    title: "Firebase yapılandırması geçersiz",
+    hint: "assets/firebase-config.js içindeki apiKey ve projectId değerlerini kontrol edin."
+  };
+  if(/auth\/network-request-failed|Failed to fetch|NetworkError|dynamically imported module/i.test(code)) return {
+    title: "Firebase'e ulaşılamadı",
+    hint: "İnternet bağlantısını kontrol edin. Bağlantı gelince senkronizasyon kendiliğinden kurulur."
+  };
+  if(/permission-denied|Missing or insufficient permissions/i.test(code)) return {
+    title: "Firestore kuralları erişime izin vermiyor",
+    hint: "Bu depodaki firestore.rules dosyasını yayınlayın: npx firebase-tools deploy --only firestore:rules"
+  };
+  if(/unavailable|failed-precondition/i.test(code)) return {
+    title: "Firestore şu anda yanıt vermiyor",
+    hint: "Veritabanının oluşturulduğundan emin olun ve birazdan tekrar deneyin."
+  };
+  return {
+    title: "Bulut bağlantısı kurulamadı",
+    hint: String(code).slice(0, 160) || "Ayrıntı için tarayıcı konsoluna bakın."
+  };
+}
+
+/* Idempotent: a retry must not re-run initializeApp/initializeFirestore, which throw
+   once the app and the Firestore instance already exist. */
+let sdk = null;
+let authInstance = null;
+
 async function connect(){
-  const [appModule, authModule, storeModule] = await Promise.all([
-    import(`${FIREBASE_CDN}firebase-app.js`),
-    import(`${FIREBASE_CDN}firebase-auth.js`),
-    import(`${FIREBASE_CDN}firebase-firestore.js`)
-  ]);
+  if(!sdk){
+    const [appModule, authModule, storeModule] = await Promise.all([
+      import(`${FIREBASE_CDN}firebase-app.js`),
+      import(`${FIREBASE_CDN}firebase-auth.js`),
+      import(`${FIREBASE_CDN}firebase-firestore.js`)
+    ]);
+    sdk = {appModule, authModule, storeModule};
+  }
+  const {appModule, authModule, storeModule} = sdk;
   ({collection, doc, getDoc, getDocs, onSnapshot, writeBatch, setDoc} = storeModule);
 
-  const app = appModule.initializeApp(firebaseConfig);
-  const auth = authModule.getAuth(app);
-  db = storeModule.initializeFirestore(app, {
-    localCache: storeModule.persistentLocalCache({tabManager: storeModule.persistentMultipleTabManager()})
-  });
+  if(!db){
+    const app = appModule.initializeApp(firebaseConfig);
+    authInstance = authModule.getAuth(app);
+    db = storeModule.initializeFirestore(app, {
+      localCache: storeModule.persistentLocalCache({tabManager: storeModule.persistentMultipleTabManager()})
+    });
+    await authModule.setPersistence(authInstance, authModule.browserLocalPersistence).catch(() => {});
+  }
 
   // Every device shares one store, so the session only needs to satisfy the Firestore
   // rules — nothing is scoped per user and nobody is ever prompted.
-  await authModule.setPersistence(auth, authModule.browserLocalPersistence).catch(() => {});
-  if(!auth.currentUser){
-    await authModule.signInAnonymously(auth);
+  if(!authInstance.currentUser){
+    await authModule.signInAnonymously(authInstance);
   }
 }
 
@@ -79,10 +125,13 @@ async function startCloudSync(){
       queueCloudWrite(window.KanerApp.snapshot(), true);
     }
     attachRealtimeListeners();
+    report("connected", "Bulut senkronizasyonu etkin", "Değişiklikler tüm cihazlarda anında güncelleniyor.");
   }catch(error){
     console.error("Firestore başlatılamadı:", error);
     cloudStarted = false;
-    window.KanerApp.toast("Bulut senkronizasyonu kurulamadı; veriler bu cihazda saklanıyor.", "error");
+    const reason = describeError(error);
+    report("offline", reason.title, reason.hint);
+    window.KanerApp.toast(reason.title + " — veriler bu cihazda saklanıyor.", "error");
   }
 }
 
@@ -110,7 +159,9 @@ function attachRealtimeListeners(){
 
 function cloudListenerError(error){
   console.error("Firestore dinleme hatası:", error);
-  window.KanerApp.toast("Bulut senkronizasyonu durdu. Firebase kurallarını kontrol edin.", "error");
+  const reason = describeError(error);
+  report("offline", reason.title, reason.hint);
+  window.KanerApp.toast("Bulut senkronizasyonu durdu: " + reason.title, "error");
 }
 
 let remoteApplyTimer = null;
@@ -179,13 +230,18 @@ function flushCloudWrite(){
 
 function cloudWriteError(error){
   console.error("Firestore kayıt hatası:", error);
+  const reason = describeError(error);
+  report("offline", reason.title, reason.hint);
   window.KanerApp.toast("Değişiklik buluta gönderilemedi; cihazda saklandı.", "error");
 }
 
 window.addEventListener("kaner:db-changed", event => queueCloudWrite(event.detail));
 
+let connecting = false;
 async function bootstrap(){
-  clearLegacyPinState();
+  if(connecting) return;
+  connecting = true;
+  report("connecting", "Bağlanılıyor…", "");
   try{
     await connect();
   }catch(error){
@@ -193,10 +249,19 @@ async function bootstrap(){
     // Firebase console. The app is already on screen and fully usable against
     // localStorage, so this is a background degradation, not a blocking failure.
     console.error("Firebase bağlantısı kurulamadı:", error);
-    window.KanerApp.toast("Çevrimdışı mod: değişiklikler bu cihazda saklanıyor.", "error");
+    const reason = describeError(error);
+    report("offline", reason.title, reason.hint);
+    window.KanerApp.toast(reason.title + " — veriler bu cihazda saklanıyor.", "error");
+    connecting = false;
     return;
   }
   await startCloudSync();
+  connecting = false;
 }
 
+// Lets Settings > Veri Yönetimi retry after the console setting is flipped, without
+// making the user reload and lose their place.
+window.KanerApp.retryCloud = () => { cloudStarted = false; remoteState = null; return bootstrap(); };
+
+clearLegacyPinState();
 bootstrap();

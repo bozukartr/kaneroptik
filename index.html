@@ -487,6 +487,9 @@
   .switch::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .15s;box-shadow:0 1px 2px rgba(0,0,0,.2);}
   .switch.on::after{transform:translateX(16px);}
   .danger-zone{border:1px solid #EAC7BA;background:var(--danger-tint);border-radius:var(--radius);padding:16px 18px;}
+  .cloud-status-warn{border-color:#EAD3AC;background:var(--amber-tint);}
+  .cloud-status-success{border-color:#BFD9C9;background:var(--success-tint);}
+  .cloud-status-hint{margin:0;font-size:12.5px;line-height:1.5;color:var(--ink-soft);}
 
   /* ---------- Invoice / receipt template ---------- */
   .invoice-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;}
@@ -3053,6 +3056,7 @@ function renderSettings(){
         </div>
 
         <div class="settings-section ${settingsTab==='veri'?'active':''}" id="settingsSection-veri">
+          ${cloudStatusHTML()}
           <div class="card" style="margin-bottom:16px;">
             <div class="card-head"><div><div class="card-title">Yedekleme</div><p>Verileriniz bu cihazın tarayıcısında saklanır. Düzenli yedek almanızı öneririz.</p></div></div>
             <div style="display:flex;gap:10px;flex-wrap:wrap;">
@@ -3078,7 +3082,41 @@ function renderSettings(){
   `;
 }
 
+function cloudStatusHTML(){
+  const tone = cloudStatus.state === "connected" ? "success"
+             : cloudStatus.state === "connecting" ? "neutral" : "warn";
+  const label = cloudStatus.state === "connected" ? "Bağlı"
+              : cloudStatus.state === "connecting" ? "Bağlanıyor" : "Çevrimdışı";
+  return `
+    <div class="card cloud-status cloud-status-${tone}" id="cloudStatusCard" style="margin-bottom:16px;">
+      <div class="card-head" style="margin-bottom:10px;">
+        <div>
+          <div class="card-title">Bulut senkronizasyonu</div>
+          <p>${escapeHTML(cloudStatus.title)}</p>
+        </div>
+        <span class="badge badge-${tone==='neutral'?'neutral':tone==='success'?'success':'warn'}">
+          <span class="badge-dot"></span>${label}
+        </span>
+      </div>
+      ${cloudStatus.hint ? `<p class="cloud-status-hint">${escapeHTML(cloudStatus.hint)}</p>` : ""}
+      ${cloudStatus.state === "offline"
+        ? `<button class="btn btn-ghost btn-sm" id="cloudRetryBtn" style="margin-top:12px;">Tekrar dene</button>`
+        : ""}
+    </div>`;
+}
+
+function mountCloudStatus(){
+  const retry = document.getElementById("cloudRetryBtn");
+  if(!retry || !window.KanerApp.retryCloud) return;
+  retry.addEventListener("click", ()=>{
+    retry.disabled = true;
+    retry.textContent = "Deneniyor…";
+    window.KanerApp.retryCloud();
+  });
+}
+
 function mountSettings(){
+  mountCloudStatus();
   document.querySelectorAll("[data-settings-tab]").forEach(b=> b.addEventListener("click", ()=>{
     settingsTab = b.dataset.settingsTab;
     render();
@@ -3154,6 +3192,10 @@ function init(){
 
 init();
 
+/* Cloud connection state, surfaced in Settings > Veri Yönetimi. Without it a fully
+   configured project that fails on one console switch just looks like "offline". */
+let cloudStatus = {state:"connecting", title:"Bağlanılıyor…", hint:""};
+
 window.KanerApp = {
   snapshot(){ return JSON.parse(JSON.stringify(DB)); },
   applyCloud(nextDB){
@@ -3166,7 +3208,13 @@ window.KanerApp = {
     render();
     window.__KANER_CLOUD_APPLYING__ = false;
   },
-  toast(message, type){ showToast(message, type); }
+  toast(message, type){ showToast(message, type); },
+  setCloudStatus(next){
+    cloudStatus = next;
+    const card = document.getElementById("cloudStatusCard");
+    if(card) card.outerHTML = cloudStatusHTML();
+    mountCloudStatus();
+  }
 };
 </script>
 <link rel="stylesheet" href="assets/enterprise.css">
