@@ -245,8 +245,7 @@ body.dark-mode .rx-quick-customer { background: #19272a; }
 .connectivity-pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
 .connectivity-pill.offline::before { background: var(--danger); }
 /* Must sit under the modal (100) and the command palette (150); it used to float on top of both. */
-body.scroll-locked .connectivity-pill,
-body.app-locked .connectivity-pill { opacity: 0 !important; }
+body.scroll-locked .connectivity-pill { opacity: 0 !important; }
 
 .mobile-appbar, .mobile-bottom-nav, .mobile-fab, .quick-sheet-overlay, .mobile-view-heading { display: none; }
 
@@ -682,8 +681,7 @@ body.dark-mode fieldset { background: #142023; }
   .mobile-table .row-actions { flex-wrap: wrap; justify-content: flex-end; }
 
   .modal-overlay,
-  .cmdk-overlay,
-  .firebase-gate {
+  .cmdk-overlay {
     height: var(--visual-viewport-height, 100dvh);
     min-height: 0;
     top: var(--visual-viewport-offset, 0px);
@@ -845,97 +843,3 @@ body.dark-mode fieldset { background: #142023; }
   .card, .stat-card, .btn, input, select, textarea { border-width: 2px !important; }
 }
 
-/* Firebase device authorization and daily PIN lock */
-body.firebase-pending > .app { visibility: hidden; }
-body.app-locked { overflow: hidden; }
-body.app-locked > .app,
-body.app-locked > .mobile-appbar,
-body.app-locked > .mobile-bottom-nav,
-body.app-locked > .mobile-fab {
-  filter: blur(8px);
-  pointer-events: none;
-  user-select: none;
-}
-.firebase-gate {
-  position: fixed;
-  z-index: 1000;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: max(20px, env(safe-area-inset-top)) 18px max(20px, env(safe-area-inset-bottom));
-  background:
-    radial-gradient(circle at 20% 10%, rgba(64, 164, 169, .22), transparent 28rem),
-    linear-gradient(145deg, #0c4851 0%, #082f36 62%, #061f25 100%);
-  transition: opacity .22s ease, visibility .22s ease;
-}
-.firebase-gate.is-hidden { opacity: 0; visibility: hidden; pointer-events: none; }
-.firebase-gate-card {
-  width: min(100%, 420px);
-  padding: 30px;
-  border: 1px solid rgba(255,255,255,.16);
-  border-radius: 24px;
-  background: rgba(255,255,255,.97);
-  box-shadow: 0 30px 90px rgba(0,0,0,.3);
-}
-.firebase-gate-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 25px; }
-.firebase-gate-logo {
-  width: 48px;
-  height: 48px;
-  display: grid;
-  place-items: center;
-  border-radius: 15px;
-  color: #fff;
-  background: linear-gradient(145deg, #11727b, #0b454e);
-  box-shadow: 0 9px 24px rgba(11,69,78,.24);
-}
-.firebase-gate-brand strong { display: block; font: 700 20px var(--font-display); }
-.firebase-gate-brand span { display: block; margin-top: 2px; color: var(--ink-soft); font-size: 11px; }
-.firebase-gate h1 { margin-bottom: 6px; font-size: 25px; }
-.firebase-gate-copy { margin: 0 0 22px; color: var(--ink-soft); font-size: 13px; }
-.firebase-gate .field { margin-bottom: 13px; }
-.firebase-gate .field input { height: 47px; font-size: 15px; }
-.firebase-gate .pin-input {
-  height: 58px !important;
-  text-align: center;
-  font: 700 25px var(--font-mono) !important;
-  letter-spacing: 12px;
-  padding-left: 22px;
-}
-.firebase-gate-submit { width: 100%; min-height: 47px; justify-content: center; margin-top: 4px; }
-.firebase-gate-message { min-height: 19px; margin-top: 12px; color: var(--danger); font-size: 11.5px; text-align: center; }
-.firebase-gate-status { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 14px; color: var(--ink-faint); font-size: 10.5px; }
-.firebase-gate-status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
-.firebase-gate-help { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--mist); color: var(--ink-faint); font-size: 10.5px; line-height: 1.5; }
-.firebase-gate-spinner { width: 17px; height: 17px; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: gateSpin .7s linear infinite; }
-@keyframes gateSpin { to { transform: rotate(360deg); } }
-
-@media (max-width: 520px) {
-  .firebase-gate { align-items: end; padding-inline: 0; padding-bottom: 0; }
-  .firebase-gate-card { width: 100%; padding: 24px 20px calc(25px + env(safe-area-inset-bottom)); border-radius: 25px 25px 0 0; }
-  .firebase-gate-brand { margin-bottom: 20px; }
-}
-
-@media (max-width: 900px), (max-width: 1024px) and (orientation: landscape) and (hover: none) {
-  .firebase-gate {
-    inset: auto 0 auto 0;
-    top: var(--visual-viewport-offset, 0px);
-    height: var(--visual-viewport-height, 100dvh);
-    padding-top: max(16px, var(--safe-top));
-    padding-right: max(18px, var(--safe-right));
-    padding-bottom: max(16px, var(--safe-bottom));
-    padding-left: max(18px, var(--safe-left));
-  }
-}
-
-@media (max-width: 520px) {
-  .firebase-gate {
-    padding-right: var(--safe-right);
-    padding-bottom: 0;
-    padding-left: var(--safe-left);
-  }
-  .firebase-gate-card {
-    padding-right: max(20px, calc(var(--safe-right) + 16px));
-    padding-bottom: calc(25px + var(--safe-bottom));
-    padding-left: max(20px, calc(var(--safe-left) + 16px));
-  }
-}

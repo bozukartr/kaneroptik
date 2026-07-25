@@ -9,7 +9,5 @@ export const firebaseConfig = {
 };
 
 export const storeConfig = {
-  id: "kaner-optik",
-  authorizedEmail: "admin@kaneroptik.app",
-  autoLockMinutes: 15
+  id: "kaner-optik"
 };
