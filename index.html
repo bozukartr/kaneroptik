@@ -269,6 +269,13 @@
   }
   .toast.success{background:var(--success);}
   .toast.error{background:var(--danger);}
+  .toast-text{flex:1;min-width:0;}
+  .toast-action{
+    flex-shrink:0;margin-left:4px;padding:5px 11px;border-radius:20px;
+    border:1px solid rgba(255,255,255,.45);background:rgba(255,255,255,.14);
+    color:#fff;font-size:12.5px;font-weight:700;
+  }
+  .toast-action:hover{background:rgba(255,255,255,.26);}
   @keyframes toastIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
 
   /* ---------- Lens diagram (signature element) ---------- */
@@ -328,9 +335,13 @@
   .chip.active{background:var(--teal);border-color:var(--teal);color:#fff;}
 
   .kbd-hint{font-size:11px;color:var(--ink-faint);}
+  .report-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:18px;}
 
   /* Sorting control for the card layout, where the sortable table header is hidden. */
   .mobile-sort{display:none;align-items:center;gap:8px;width:100%;}
+  /* The prescription list is cards at every width, so its sort control always shows. */
+  .list-sort{display:flex;width:auto;}
+  .list-sort select{min-width:170px;}
   .mobile-sort-label{font-size:12px;font-weight:600;color:var(--ink-soft);flex-shrink:0;}
   .mobile-sort select{flex:1;min-width:0;padding:9px 11px;border:1px solid var(--mist-dark);border-radius:var(--radius-sm);background:#fff;}
 
@@ -781,14 +792,15 @@ function daysSince(iso){
   return Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
 }
 function fmtDiopter(v){
-  if(v===""||v===null||v===undefined||isNaN(v)) return "—";
-  const n = parseFloat(v);
+  const n = parseDecimal(v);
+  if(Number.isNaN(n)) return "—";
   if(n===0) return "0.00";
   return (n>0?"+":"") + n.toFixed(2);
 }
 function fmtAdd(v){
-  if(v===""||v===null||v===undefined||isNaN(v)||parseFloat(v)===0) return null;
-  return "+"+parseFloat(v).toFixed(2);
+  const n = parseDecimal(v);
+  if(Number.isNaN(n) || n===0) return null;
+  return "+"+n.toFixed(2);
 }
 function escapeHTML(str){
   if(str===undefined||str===null) return "";
@@ -810,6 +822,24 @@ function formatPhoneMask(value){
   if(digits.length>9) parts.push(digits.slice(9,11));
   return parts.filter(Boolean).join(" ");
 }
+/* Turkish keyboards produce a comma decimal separator, and `<input type="number">`
+   reports an empty value for "1,50" — the figure was silently dropped. Numeric fields
+   are plain text with inputmode="decimal" and are parsed through here instead. */
+function parseDecimal(value){
+  if(value === undefined || value === null) return NaN;
+  const normalized = String(value).trim().replace(/\s/g, "").replace(",", ".");
+  if(normalized === "") return NaN;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
+function decimalValue(value, fallback){
+  const parsed = parseDecimal(value);
+  return Number.isNaN(parsed) ? (fallback === undefined ? 0 : fallback) : parsed;
+}
+function intValue(value, fallback){
+  return Math.round(decimalValue(value, fallback === undefined ? 0 : fallback));
+}
+
 function taxBreakdown(total, rate){
   total = Number(total)||0;
   rate = Number(rate)||0;
@@ -856,8 +886,13 @@ function sortArrow(colKey, state){
 /* Sorting lives in the table header, which the mobile card layout hides — so on a
    phone there was no way to sort a list at all. This select mirrors the same state. */
 function mobileSortHTML(group, options, state){
+  return sortSelectHTML(group, options, state);
+}
+
+function sortSelectHTML(group, options, state, opts){
+  opts = opts || {};
   return `
-    <label class="mobile-sort">
+    <label class="mobile-sort${opts.always ? " list-sort" : ""}">
       <span class="mobile-sort-label">Sırala</span>
       <select data-sort-group="${group}" aria-label="Listeyi sırala">
         ${options.map(([key, ascLabel, descLabel]) => `
@@ -940,17 +975,53 @@ function saleStatusBadge(sale){
 }
 
 /* ---------------- Toast ---------------- */
-function showToast(msg, type){
+function showToast(msg, type, action){
   const container = document.getElementById("toastContainer");
   const el = document.createElement("div");
   el.className = "toast" + (type ? " "+type : "");
-  el.textContent = msg;
+  const text = document.createElement("span");
+  text.className = "toast-text";
+  text.textContent = msg;
+  el.appendChild(text);
+  if(action){
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "toast-action";
+    button.textContent = action.label;
+    button.addEventListener("click", ()=>{ el.remove(); action.onClick(); });
+    el.appendChild(button);
+  }
   container.appendChild(el);
+  // An offer to undo needs long enough to read, notice and reach for.
   setTimeout(()=>{
     el.style.opacity = "0";
     el.style.transition = "opacity .2s";
     setTimeout(()=> el.remove(), 220);
-  }, 2600);
+  }, action ? 9000 : 2600);
+}
+
+/* ---------------- Undo ---------------- */
+/* Deletions are confirmed but irreversible, and a customer takes their prescriptions
+   and sales with them. Snapshot before mutating so one tap puts it all back. */
+let undoSnapshot = null;
+function withUndo(message, mutate){
+  const snapshot = JSON.parse(JSON.stringify(DB));
+  mutate();
+  saveDB();
+  undoSnapshot = snapshot;
+  showToast(message, "success", {label:"Geri al", onClick: undoLastAction});
+  render();
+}
+function undoLastAction(){
+  if(!undoSnapshot) return;
+  DB = migrateDB(undoSnapshot);
+  undoSnapshot = null;
+  saveDB();
+  updateNavCounts();
+  updateSidebarBrand();
+  refreshBellBadge();
+  showToast("İşlem geri alındı.", "success");
+  render();
 }
 
 /* ---------------- Scroll lock ---------------- */
@@ -969,7 +1040,9 @@ function lockBodyScroll(lock){
     if(--scrollLockDepth > 0) return;
     document.body.classList.remove("scroll-locked");
     document.body.style.top = "";
-    window.scrollTo(0, scrollLockOffset);
+    // html has scroll-behavior:smooth, which would animate the restore and make
+    // closing a modal look like the page slid away underneath you.
+    window.scrollTo({top: scrollLockOffset, left: 0, behavior: "instant"});
   }
 }
 
@@ -1436,12 +1509,11 @@ function importBackupFile(file){
   reader.readAsText(file);
 }
 function resetAllData(){
-  confirmAction("Tüm müşteri, reçete, satış ve stok verileri kalıcı olarak silinecek. Bu işlem geri alınamaz.", ()=>{
-    DB = emptyDB();
-    saveDB();
-    showToast("Tüm veriler sıfırlandı.");
+  const summary = `${DB.customers.length} müşteri, ${DB.prescriptions.length} reçete, ${DB.sales.length} satış ve ${DB.products.length} ürün`;
+  confirmAction(`${summary} silinecek. Bu ekranı kapatana kadar işlemi geri alabilirsiniz; sonrasında yalnızca yedekten dönülebilir.`, ()=>{
+    withUndo("Tüm veriler sıfırlandı.", ()=>{ DB = emptyDB(); });
     navigate("dashboard");
-  });
+  }, {title:"Tüm verileri sıfırla", confirmLabel:"Evet, sıfırla"});
 }
 
 /* ---------------- Seed demo data (first run only) ---------------- */
@@ -1635,10 +1707,22 @@ function emptyState(title, text, actionHTML){
   </div>`;
 }
 
-function monthlyRevenueChart(months){
+/* `months` may be null for open-ended ranges ("Bu yıl", "Tümü"), in which case the
+   span is derived from `from` — or from the oldest sale on record. */
+function monthlyRevenueChart(months, from){
   const now = new Date();
+  let span = months;
+  if(!span){
+    let start = from;
+    if(!start){
+      const earliest = DB.sales.map(s=>s.tarih).filter(Boolean).sort()[0];
+      start = earliest ? new Date(earliest) : new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+    span = (now.getFullYear()-start.getFullYear())*12 + (now.getMonth()-start.getMonth()) + 1;
+  }
+  span = Math.max(1, Math.min(span, 60));
   const keys = [];
-  for(let i=months-1;i>=0;i--){
+  for(let i=span-1;i>=0;i--){
     const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
     keys.push({key: d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"), label: d.toLocaleDateString("tr-TR",{month:"short"})});
   }
@@ -1878,13 +1962,15 @@ function deleteCustomer(id){
   const saleCount = DB.sales.filter(s=>s.customerId===id).length;
   let msg = "Bu müşteri kalıcı olarak silinecek.";
   if(rxCount || saleCount) msg += ` Bağlı ${rxCount} reçete ve ${saleCount} satış kaydı da silinecektir.`;
+  const wasOnDetail = currentView==="customerDetail" && currentParams.id===id;
   confirmAction(msg, ()=>{
-    DB.customers = DB.customers.filter(c=>c.id!==id);
-    DB.prescriptions = DB.prescriptions.filter(r=>r.customerId!==id);
-    DB.sales = DB.sales.filter(s=>s.customerId!==id);
-    saveDB();
-    showToast("Müşteri silindi.");
-    if(currentView==="customerDetail" && currentParams.id===id) navigate("customers"); else render();
+    withUndo("Müşteri silindi.", ()=>{
+      DB.customers = DB.customers.filter(c=>c.id!==id);
+      DB.prescriptions = DB.prescriptions.filter(r=>r.customerId!==id);
+      DB.sales = DB.sales.filter(s=>s.customerId!==id);
+    });
+    // The detail screen for a deleted customer has nothing left to show.
+    if(wasOnDetail) navigate("customers");
   });
 }
 
@@ -2149,8 +2235,10 @@ function lensDiagramSVG(rx, w, h, opts){
   const showLabels = opts.showLabels !== false;
 
   function axisLine(cx, cyl, axis){
-    if(!cyl || Number(cyl)===0) return "";
-    const rad = (Number(axis)||0) * Math.PI/180;
+    // Values arrive straight from the form while typing, so they may still be raw
+    // text with a comma decimal separator.
+    if(!cyl || decimalValue(cyl, 0) === 0) return "";
+    const rad = decimalValue(axis, 0) * Math.PI/180;
     const dx = r*0.82*Math.cos(rad), dy = -r*0.82*Math.sin(rad);
     return `<line x1="${cx-dx}" y1="${cy-dy}" x2="${cx+dx}" y2="${cy+dy}" stroke="var(--amber,#D68A3C)" stroke-width="2" stroke-linecap="round"/>`;
   }
@@ -2207,11 +2295,10 @@ function renderPrescriptions(){
           <button type="button" class="chip ${rxTypeFilter==='all'?'active':''}" data-rx-type-filter="all">Tümü</button>
           ${RX_TYPES.map(t=>`<button type="button" class="chip ${rxTypeFilter===t?'active':''}" data-rx-type-filter="${t}">${t}</button>`).join("")}
         </div>
-        <select id="rxSortSelect" style="padding:8px 10px;border:1px solid var(--mist-dark);border-radius:20px;font-size:12px;background:#fff;">
-          <option value="tarih-desc" ${rxSort.key==='tarih'&&rxSort.dir==='desc'?'selected':''}>En yeni tarih</option>
-          <option value="tarih-asc" ${rxSort.key==='tarih'&&rxSort.dir==='asc'?'selected':''}>En eski tarih</option>
-          <option value="musteri-asc" ${rxSort.key==='musteri'?'selected':''}>Müşteri adı (A-Z)</option>
-        </select>
+        ${sortSelectHTML("rx", [
+          ["tarih","Tarih (eski)","Tarih (yeni)"],
+          ["musteri","Müşteri (A–Z)","Müşteri (Z–A)"]
+        ], rxSort, {always:true})}
       </div>
       <div class="toolbar-right">
         <button class="btn btn-ghost" id="btnExportRxCSV">
@@ -2279,10 +2366,10 @@ function rxEyeFieldsHTML(prefix, label, eye){
     <fieldset>
       <legend>${label}</legend>
       <div class="rx-eye-grid">
-        <div class="field"><label>SPH</label><input type="number" inputmode="decimal" step="0.25" id="${prefix}_sph" value="${eye.sph!==undefined&&eye.sph!==null?eye.sph:''}" placeholder="0.00"></div>
-        <div class="field"><label>CYL</label><input type="number" inputmode="decimal" step="0.25" id="${prefix}_cyl" value="${eye.cyl!==undefined&&eye.cyl!==null?eye.cyl:''}" placeholder="0.00"></div>
-        <div class="field"><label>AXIS</label><input type="number" inputmode="numeric" min="0" max="180" id="${prefix}_axis" value="${eye.axis!==undefined&&eye.axis!==null?eye.axis:''}" placeholder="0–180"></div>
-        <div class="field"><label>ADD</label><input type="number" inputmode="decimal" step="0.25" id="${prefix}_add" value="${eye.add!==undefined&&eye.add!==null?eye.add:''}" placeholder="0.00"></div>
+        <div class="field"><label>SPH</label><input type="text" inputmode="decimal" id="${prefix}_sph" value="${eye.sph!==undefined&&eye.sph!==null?eye.sph:''}" placeholder="0.00"></div>
+        <div class="field"><label>CYL</label><input type="text" inputmode="decimal" id="${prefix}_cyl" value="${eye.cyl!==undefined&&eye.cyl!==null?eye.cyl:''}" placeholder="0.00"></div>
+        <div class="field"><label>AXIS</label><input type="text" inputmode="numeric" id="${prefix}_axis" value="${eye.axis!==undefined&&eye.axis!==null?eye.axis:''}" placeholder="0–180"></div>
+        <div class="field"><label>ADD</label><input type="text" inputmode="decimal" id="${prefix}_add" value="${eye.add!==undefined&&eye.add!==null?eye.add:''}" placeholder="0.00"></div>
       </div>
     </fieldset>
   `;
@@ -2345,7 +2432,7 @@ function openRxForm(rx, presetCustomerId){
       ${rxEyeFieldsHTML("f_od","OD — Sağ Göz", data.od)}
       ${rxEyeFieldsHTML("f_os","OS — Sol Göz", data.os)}
       <div class="form-row">
-        <div class="field"><label>PD (mm)</label><input type="number" step="0.5" id="f_rx_pd" value="${data.pd||''}"></div>
+        <div class="field"><label>PD (mm)</label><input type="text" inputmode="decimal" id="f_rx_pd" value="${data.pd||''}"></div>
         <div class="field"><label>Not</label><input id="f_rx_notlar" value="${escapeHTML(data.notlar)}"></div>
       </div>
     </div>
@@ -2431,7 +2518,7 @@ function openRxForm(rx, presetCustomerId){
     const customerId = document.getElementById("f_rx_customer").value;
     if(!customerId){ showToast("Lütfen bir müşteri seçin.","error"); return; }
     const eyes = currentEyeVals();
-    const num = v => v===""?"":parseFloat(v);
+    const num = v => String(v).trim()==="" ? "" : decimalValue(v, 0);
     const payload = {
       customerId,
       tarih: document.getElementById("f_rx_tarih").value || todayISO(),
@@ -2439,7 +2526,7 @@ function openRxForm(rx, presetCustomerId){
       tur: selectedType,
       od: {sph:num(eyes.od.sph), cyl:num(eyes.od.cyl), axis:num(eyes.od.axis)||0, add:num(eyes.od.add)},
       os: {sph:num(eyes.os.sph), cyl:num(eyes.os.cyl), axis:num(eyes.os.axis)||0, add:num(eyes.os.add)},
-      pd: document.getElementById("f_rx_pd").value ? parseFloat(document.getElementById("f_rx_pd").value) : "",
+      pd: String(document.getElementById("f_rx_pd").value).trim() ? decimalValue(document.getElementById("f_rx_pd").value, 0) : "",
       notlar: document.getElementById("f_rx_notlar").value.trim(),
     };
     if(isEdit){
@@ -2457,12 +2544,9 @@ function openRxForm(rx, presetCustomerId){
 }
 
 function deleteRx(id){
-  confirmAction("Bu reçete kalıcı olarak silinecek.", ()=>{
+  confirmAction("Bu reçete kalıcı olarak silinecek.", ()=> withUndo("Reçete silindi.", ()=>{
     DB.prescriptions = DB.prescriptions.filter(r=>r.id!==id);
-    saveDB();
-    showToast("Reçete silindi.");
-    render();
-  });
+  }));
 }
 
 function mountPrescriptions(){
@@ -2471,11 +2555,7 @@ function mountPrescriptions(){
   document.getElementById("btnNewRx").addEventListener("click", ()=> openRxForm(null, null));
   document.getElementById("btnExportRxCSV").addEventListener("click", exportPrescriptionsCSV);
   document.querySelectorAll("[data-rx-type-filter]").forEach(b=> b.addEventListener("click", ()=>{ rxTypeFilter=b.dataset.rxTypeFilter; rxPage=1; render(); }));
-  document.getElementById("rxSortSelect").addEventListener("change",(e)=>{
-    const [key,dir] = e.target.value.split("-");
-    rxSort = {key,dir};
-    render();
-  });
+  bindMobileSort("rx", rxSort);
   document.querySelectorAll("[data-page-group='rx']").forEach(b=> b.addEventListener("click", ()=>{ rxPage=Number(b.dataset.page); render(); }));
   document.querySelectorAll("[data-open-customer]").forEach(b=> b.addEventListener("click", ()=> navigate("customerDetail",{id:b.dataset.openCustomer})));
   document.querySelectorAll("[data-edit-rx-g]").forEach(b=> b.addEventListener("click", ()=> openRxForm(DB.prescriptions.find(r=>r.id===b.dataset.editRxG))));
@@ -2612,7 +2692,7 @@ function openSaleForm(sale, presetCustomerId){
       <button class="btn btn-ghost btn-sm" id="addSaleItemBtn" type="button">+ Ürün Satırı Ekle</button>
       <div class="divider"></div>
       <div class="form-row-3">
-        <div class="field"><label>Ödenen Tutar</label><input type="number" min="0" id="f_sale_odenen" value="${data.odenen||0}"></div>
+        <div class="field"><label>Ödenen Tutar</label><input type="text" inputmode="decimal" id="f_sale_odenen" value="${data.odenen||0}"></div>
         <div class="field"><label>Ödeme Yöntemi</label>
           <select id="f_sale_yontem">${PAYMENT_METHODS.map(m=>`<option ${data.odemeYontemi===m?"selected":""}>${m}</option>`).join("")}</select>
         </div>
@@ -2657,8 +2737,8 @@ function openSaleForm(sale, presetCustomerId){
         </div>
         <div class="field" style="margin-bottom:0;"><label>Adet × Fiyat</label>
           <div style="display:flex;gap:6px;">
-            <input type="number" min="1" data-item-field="adet" data-idx="${idx}" value="${it.adet}" style="width:60px;">
-            <input type="number" min="0" data-item-field="birimFiyat" data-idx="${idx}" value="${it.birimFiyat}">
+            <input type="text" inputmode="numeric" data-item-field="adet" data-idx="${idx}" value="${it.adet}" style="width:60px;">
+            <input type="text" inputmode="decimal" data-item-field="birimFiyat" data-idx="${idx}" value="${it.birimFiyat}">
             <button class="btn-icon" data-remove-item="${idx}" title="Satırı Sil" type="button" ${saleFormItems.length===1?'disabled':''}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
           </div>
         </div>
@@ -2683,8 +2763,8 @@ function openSaleForm(sale, presetCustomerId){
     });
     wrap.querySelectorAll("[data-item-field='tur']").forEach(sel=> sel.addEventListener("change",(e)=>{ saleFormItems[Number(e.target.dataset.idx)].tur = e.target.value; }));
     wrap.querySelectorAll("[data-item-field='ad']").forEach(inp=> inp.addEventListener("input",(e)=>{ saleFormItems[Number(e.target.dataset.idx)].ad = e.target.value; }));
-    wrap.querySelectorAll("[data-item-field='adet']").forEach(inp=> inp.addEventListener("input",(e)=>{ saleFormItems[Number(e.target.dataset.idx)].adet = parseFloat(e.target.value)||0; updateTotal(); }));
-    wrap.querySelectorAll("[data-item-field='birimFiyat']").forEach(inp=> inp.addEventListener("input",(e)=>{ saleFormItems[Number(e.target.dataset.idx)].birimFiyat = parseFloat(e.target.value)||0; updateTotal(); }));
+    wrap.querySelectorAll("[data-item-field='adet']").forEach(inp=> inp.addEventListener("input",(e)=>{ saleFormItems[Number(e.target.dataset.idx)].adet = intValue(e.target.value, 0); updateTotal(); }));
+    wrap.querySelectorAll("[data-item-field='birimFiyat']").forEach(inp=> inp.addEventListener("input",(e)=>{ saleFormItems[Number(e.target.dataset.idx)].birimFiyat = decimalValue(e.target.value, 0); updateTotal(); }));
     wrap.querySelectorAll("[data-remove-item]").forEach(b=> b.addEventListener("click",(e)=>{
       saleFormItems.splice(Number(e.currentTarget.dataset.removeItem),1);
       renderItemRows();
@@ -2731,7 +2811,7 @@ function openSaleForm(sale, presetCustomerId){
       customerId,
       tarih: document.getElementById("f_sale_tarih").value || todayISO(),
       items: validItems,
-      odenen: parseFloat(document.getElementById("f_sale_odenen").value)||0,
+      odenen: decimalValue(document.getElementById("f_sale_odenen").value, 0),
       odemeYontemi: document.getElementById("f_sale_yontem").value,
       kdvOrani: Number(document.getElementById("f_sale_kdv").value)||0,
       notlar: document.getElementById("f_sale_notlar").value.trim(),
@@ -2765,17 +2845,14 @@ function deleteSale(id){
     .reduce((sum,it)=> sum + (Number(it.adet)||0), 0);
   let message = "Bu satış kaydı kalıcı olarak silinecek.";
   if(restock) message += ` Satışta stoktan düşülen ${restock} adet ürün stoğa geri eklenecek.`;
-  confirmAction(message, ()=>{
+  confirmAction(message, ()=> withUndo(restock ? "Satış silindi, stok geri alındı." : "Satış silindi.", ()=>{
     (sale.items||[]).forEach(it=>{
       if(!it.productId) return;
       const product = DB.products.find(p=>p.id===it.productId);
       if(product) product.stok = (Number(product.stok)||0) + (Number(it.adet)||0);
     });
     DB.sales = DB.sales.filter(s=>s.id!==id);
-    saveDB();
-    showToast(restock ? "Satış silindi, stok geri alındı." : "Satış silindi.");
-    render();
-  });
+  }));
 }
 
 /* ---------------- Collecting a balance ---------------- */
@@ -2801,7 +2878,7 @@ function openPaymentForm(sale){
       <div class="form-row">
         <div class="field">
           <label>Tahsil edilen tutar</label>
-          <input type="number" inputmode="decimal" min="0" step="0.01" id="f_pay_amount" value="${due.toFixed(2)}">
+          <input type="text" inputmode="decimal" id="f_pay_amount" value="${due.toFixed(2)}">
         </div>
         <div class="field">
           <label>Ödeme yöntemi</label>
@@ -2822,7 +2899,7 @@ function openPaymentForm(sale){
     amountInput.focus();
   });
   document.getElementById("savePaymentBtn").addEventListener("click", ()=>{
-    const amount = parseFloat(amountInput.value);
+    const amount = decimalValue(amountInput.value, NaN);
     if(!(amount > 0)){ showToast("Tahsil edilen tutar sıfırdan büyük olmalıdır.","error"); return; }
     if(amount > due + 0.005){ showToast(`Kalan tutar ${fmtCurrency(due)}. Daha fazlasını tahsil edemezsiniz.`,"error"); return; }
     sale.odenen = Math.min(total, paid + amount);
@@ -3074,8 +3151,8 @@ function openProductForm(p){
         <div class="field"><label>SKU</label><input id="f_p_sku" value="${escapeHTML(data.sku)}"></div>
       </div>
       <div class="form-row">
-        <div class="field"><label>Fiyat (₺) *</label><input type="number" min="0" id="f_p_fiyat" value="${data.fiyat}"></div>
-        <div class="field"><label>Stok Adedi *</label><input type="number" min="0" id="f_p_stok" value="${data.stok}"></div>
+        <div class="field"><label>Fiyat (₺) *</label><input type="text" inputmode="decimal" id="f_p_fiyat" value="${data.fiyat}"></div>
+        <div class="field"><label>Stok Adedi *</label><input type="text" inputmode="numeric" id="f_p_stok" value="${data.stok}"></div>
       </div>
     </div>
     <div class="modal-footer">
@@ -3093,8 +3170,8 @@ function openProductForm(p){
       marka, model,
       renk: document.getElementById("f_p_renk").value.trim() || "—",
       sku: document.getElementById("f_p_sku").value.trim(),
-      fiyat: parseFloat(document.getElementById("f_p_fiyat").value)||0,
-      stok: parseInt(document.getElementById("f_p_stok").value)||0,
+      fiyat: decimalValue(document.getElementById("f_p_fiyat").value, 0),
+      stok: intValue(document.getElementById("f_p_stok").value, 0),
     };
     if(isEdit){
       Object.assign(p, payload);
@@ -3111,12 +3188,9 @@ function openProductForm(p){
 }
 
 function deleteProduct(id){
-  confirmAction("Bu ürün stoktan kalıcı olarak silinecek.", ()=>{
+  confirmAction("Bu ürün stoktan kalıcı olarak silinecek.", ()=> withUndo("Ürün silindi.", ()=>{
     DB.products = DB.products.filter(p=>p.id!==id);
-    saveDB();
-    showToast("Ürün silindi.");
-    render();
-  });
+  }));
 }
 
 function mountInventory(){
@@ -3139,21 +3213,58 @@ function mountInventory(){
 /* =========================================================
    REPORTS
    ========================================================= */
+let reportRange = "12m";
+const REPORT_RANGES = [
+  {key:"thisMonth", label:"Bu ay",     months:1},
+  {key:"3m",        label:"Son 3 ay",  months:3},
+  {key:"12m",       label:"Son 12 ay", months:12},
+  {key:"thisYear",  label:"Bu yıl",    months:null},
+  {key:"all",       label:"Tümü",      months:null},
+];
+
+function reportRangeMonths(){
+  return (REPORT_RANGES.find(r=>r.key===reportRange) || REPORT_RANGES[2]).months;
+}
+
+/* Every report card reads from this one filtered set so the range control means the
+   same thing everywhere on the screen. */
+function reportPeriod(){
+  const option = REPORT_RANGES.find(r=>r.key===reportRange) || REPORT_RANGES[2];
+  const now = new Date();
+  let from = null;
+  if(option.key === "thisMonth") from = new Date(now.getFullYear(), now.getMonth(), 1);
+  else if(option.key === "thisYear") from = new Date(now.getFullYear(), 0, 1);
+  else if(option.months) from = new Date(now.getFullYear(), now.getMonth()-(option.months-1), 1);
+  const fromKey = from ? from.toISOString().slice(0,10) : null;
+  const sales = DB.sales.filter(s=> !fromKey || (s.tarih||"") >= fromKey);
+  return {option, from, sales};
+}
+
 function renderReports(){
+  const period = reportPeriod();
+  const sales = period.sales;
+
   const statusCounts = {odendi:0, kismi:0, bekliyor:0};
-  DB.sales.forEach(s=> statusCounts[saleStatus(s)]++);
-  const statusTotal = DB.sales.length || 1;
+  sales.forEach(s=> statusCounts[saleStatus(s)]++);
+  const statusTotal = sales.length || 1;
+
+  const revenue = sales.reduce((sum,s)=> sum + saleTotal(s), 0);
+  const collected = sales.reduce((sum,s)=> sum + Math.min(saleTotal(s), Number(s.odenen)||0), 0);
+  const outstanding = Math.max(0, revenue - collected);
+  const averageSale = sales.length ? revenue / sales.length : 0;
 
   const catTotals = {};
-  DB.sales.forEach(s=> (s.items||[]).forEach(it=>{
+  sales.forEach(s=> (s.items||[]).forEach(it=>{
     const key = it.tur || "Diğer";
     catTotals[key] = (catTotals[key]||0) + (Number(it.adet)||0)*(Number(it.birimFiyat)||0);
   }));
   const catEntries = Object.entries(catTotals).sort((a,b)=>b[1]-a[1]);
   const catMax = Math.max(...catEntries.map(e=>e[1]), 1);
 
+  const spendInPeriod = new Map();
+  sales.forEach(s=> spendInPeriod.set(s.customerId, (spendInPeriod.get(s.customerId)||0) + saleTotal(s)));
   const topCustomers = DB.customers
-    .map(c=>({c, total: customerTotalSpend(c.id)}))
+    .map(c=>({c, total: spendInPeriod.get(c.id) || 0}))
     .filter(x=>x.total>0)
     .sort((a,b)=> b.total-a.total)
     .slice(0,5);
@@ -3169,14 +3280,44 @@ function renderReports(){
   });
   const gradient = gradParts.length ? `conic-gradient(${gradParts.join(",")})` : "var(--mist)";
 
+  const rangeLabel = period.option.label;
   return `
+    <div class="report-toolbar">
+      <div class="chip-select" role="group" aria-label="Rapor dönemi">
+        ${REPORT_RANGES.map(r=>`<button type="button" class="chip ${reportRange===r.key?'active':''}" data-report-range="${r.key}">${r.label}</button>`).join("")}
+      </div>
+    </div>
+
+    <div class="grid grid-4" style="margin-bottom:16px;">
+      <div class="stat-card">
+        <div class="stat-label">Satış adedi</div>
+        <div class="stat-value">${sales.length}</div>
+        <div class="stat-sub">${escapeHTML(rangeLabel)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Ciro</div>
+        <div class="stat-value" style="font-size:20px;">${fmtCurrency(revenue)}</div>
+        <div class="stat-sub">Ortalama ${fmtCurrency(averageSale)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Tahsil edilen</div>
+        <div class="stat-value" style="font-size:20px;">${fmtCurrency(collected)}</div>
+        <div class="stat-sub good">%${revenue>0 ? Math.round(collected/revenue*100) : 0} tahsilat</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Kalan alacak</div>
+        <div class="stat-value" style="font-size:20px;color:${outstanding>0?'var(--danger)':'inherit'};">${fmtCurrency(outstanding)}</div>
+        <div class="stat-sub ${outstanding>0?'warn':''}">${statusCounts.kismi + statusCounts.bekliyor} satış açık</div>
+      </div>
+    </div>
+
     <div class="grid grid-3" style="align-items:start;">
       <div class="card">
-        <div class="card-head"><div><div class="card-title">Son 12 Ay Ciro</div><p>Aylık toplam satış tutarı</p></div></div>
-        ${monthlyRevenueChart(12)}
+        <div class="card-head"><div><div class="card-title">Ciro Grafiği</div><p>${escapeHTML(rangeLabel)} · aylık toplam</p></div></div>
+        ${monthlyRevenueChart(reportRangeMonths(), period.from)}
       </div>
       <div class="card">
-        <div class="card-head"><div><div class="card-title">Ödeme Durumu</div><p>${DB.sales.length} satış</p></div></div>
+        <div class="card-head"><div><div class="card-title">Ödeme Durumu</div><p>${sales.length} satış · ${escapeHTML(rangeLabel)}</p></div></div>
         <div class="donut-wrap">
           <div style="width:120px;height:120px;border-radius:50%;background:${gradient};flex-shrink:0;"></div>
           <div class="legend-list">
@@ -3190,8 +3331,8 @@ function renderReports(){
 
     <div class="grid grid-3" style="margin-top:16px;align-items:start;">
       <div class="card">
-        <div class="card-head"><div><div class="card-title">Kategoriye Göre Ciro</div><p>Ürün türü bazında toplam satış</p></div></div>
-        ${catEntries.length===0 ? emptyState("Henüz veri yok","") : catEntries.map(([k,v])=>`
+        <div class="card-head"><div><div class="card-title">Kategoriye Göre Ciro</div><p>Ürün türü bazında · ${escapeHTML(rangeLabel)}</p></div></div>
+        ${catEntries.length===0 ? emptyState("Bu dönemde satış yok","Farklı bir dönem seçin.") : catEntries.map(([k,v])=>`
           <div class="hbar-row">
             <div class="hbar-label">${escapeHTML(k)}</div>
             <div class="hbar-track"><div class="hbar-fill" style="width:${(v/catMax*100).toFixed(1)}%;"></div></div>
@@ -3200,8 +3341,8 @@ function renderReports(){
         `).join("")}
       </div>
       <div class="card">
-        <div class="card-head"><div><div class="card-title">En Değerli Müşteriler</div><p>Toplam harcamaya göre</p></div></div>
-        ${topCustomers.length===0 ? emptyState("Henüz veri yok","") : topCustomers.map(x=>`
+        <div class="card-head"><div><div class="card-title">En Değerli Müşteriler</div><p>Harcamaya göre · ${escapeHTML(rangeLabel)}</p></div></div>
+        ${topCustomers.length===0 ? emptyState("Bu dönemde satış yok","Farklı bir dönem seçin.") : topCustomers.map(x=>`
           <div class="hbar-row">
             <button type="button" class="hbar-label hbar-label-btn" data-open-customer="${x.c.id}">${escapeHTML(customerFullName(x.c))}</button>
             <div class="hbar-track"><div class="hbar-fill" style="width:${(x.total/topMax*100).toFixed(1)}%;background:var(--amber);"></div></div>
@@ -3215,6 +3356,10 @@ function renderReports(){
 
 function mountReports(){
   document.querySelectorAll("[data-open-customer]").forEach(b=> b.addEventListener("click", ()=> navigate("customerDetail",{id:b.dataset.openCustomer})));
+  document.querySelectorAll("[data-report-range]").forEach(b=> b.addEventListener("click", ()=>{
+    reportRange = b.dataset.reportRange;
+    render();
+  }));
 }
 
 /* =========================================================
