@@ -329,6 +329,25 @@
 
   .kbd-hint{font-size:11px;color:var(--ink-faint);}
 
+  /* Sorting control for the card layout, where the sortable table header is hidden. */
+  .mobile-sort{display:none;align-items:center;gap:8px;width:100%;}
+  .mobile-sort-label{font-size:12px;font-weight:600;color:var(--ink-soft);flex-shrink:0;}
+  .mobile-sort select{flex:1;min-width:0;padding:9px 11px;border:1px solid var(--mist-dark);border-radius:var(--radius-sm);background:#fff;}
+
+  .btn-icon-accent{color:var(--success);}
+  .btn-icon-accent:hover{background:var(--success-tint);color:var(--success);}
+
+  .payment-summary{
+    display:grid;gap:8px;margin-bottom:18px;padding:14px 16px;
+    border:1px solid var(--mist);border-radius:var(--radius);background:var(--paper);
+  }
+  .payment-summary > div{display:flex;align-items:baseline;justify-content:space-between;gap:14px;font-size:12.5px;}
+  .payment-summary span{color:var(--ink-soft);}
+  .payment-summary .payment-due{
+    margin-top:2px;padding-top:9px;border-top:1px solid var(--mist-dark);font-size:15px;
+  }
+  .payment-summary .payment-due strong{color:var(--danger);font-weight:700;}
+
   @media (max-width:1080px){
     .grid-4{grid-template-columns:repeat(2,1fr);}
     .grid-3{grid-template-columns:1fr;}
@@ -834,6 +853,32 @@ function sortArrow(colKey, state){
   if(state.key!==colKey) return `<span class="sort-arrow">▲</span>`;
   return `<span class="sort-arrow">${state.dir==="asc"?"▲":"▼"}</span>`;
 }
+/* Sorting lives in the table header, which the mobile card layout hides — so on a
+   phone there was no way to sort a list at all. This select mirrors the same state. */
+function mobileSortHTML(group, options, state){
+  return `
+    <label class="mobile-sort">
+      <span class="mobile-sort-label">Sırala</span>
+      <select data-sort-group="${group}" aria-label="Listeyi sırala">
+        ${options.map(([key, ascLabel, descLabel]) => `
+          <option value="${key}|asc" ${state.key===key && state.dir==="asc" ? "selected" : ""}>${ascLabel}</option>
+          <option value="${key}|desc" ${state.key===key && state.dir==="desc" ? "selected" : ""}>${descLabel}</option>
+        `).join("")}
+      </select>
+    </label>`;
+}
+
+function bindMobileSort(group, state){
+  const select = document.querySelector(`[data-sort-group="${group}"]`);
+  if(!select) return;
+  select.addEventListener("change", ()=>{
+    const [key, dir] = select.value.split("|");
+    state.key = key;
+    state.dir = dir;
+    render();
+  });
+}
+
 function paginateSlice(rows, page, perPage){
   const start = (page-1)*perPage;
   return rows.slice(start, start+perPage);
@@ -880,7 +925,10 @@ function saleTotal(sale){
 function saleStatus(sale){
   const total = saleTotal(sale);
   const paid = Number(sale.odenen)||0;
-  if(paid >= total && total>0) return "odendi";
+  // A zero-total sale (warranty swap, freebie) is settled by definition; it used to
+  // sit in "Bekliyor" forever and inflate the pending-payment count.
+  if(total <= 0) return "odendi";
+  if(paid >= total) return "odendi";
   if(paid > 0) return "kismi";
   return "bekliyor";
 }
@@ -946,6 +994,18 @@ function openModal(html, opts){
     const first = box.querySelector("input,select,textarea");
     if(first) setTimeout(()=>first.focus(), 30);
   }
+  // Enter in a single-line field saves, the way every other form on a desktop does.
+  // Handlers deeper in the modal (the inline customer form) preventDefault first, so
+  // an already-handled Enter never reaches the footer's primary button.
+  box.addEventListener("keydown", (event)=>{
+    if(event.key !== "Enter" || event.isComposing || event.defaultPrevented) return;
+    const tag = event.target.tagName;
+    if(tag === "TEXTAREA" || tag === "BUTTON" || tag === "SELECT") return;
+    const primary = box.querySelector(".modal-footer .btn-primary:not([disabled])");
+    if(!primary) return;
+    event.preventDefault();
+    primary.click();
+  });
 }
 function closeModal(){
   const overlay = document.getElementById("modalOverlay");
@@ -967,13 +1027,14 @@ document.getElementById("modalOverlay").addEventListener("click", (e)=>{
 document.addEventListener("keydown", (e)=>{
   if(e.key === "Escape") closeModal();
 });
-function confirmAction(message, onConfirm){
+function confirmAction(message, onConfirm, opts){
+  opts = opts || {};
   openModal(`
-    <div class="modal-header"><h3>Emin misiniz?</h3></div>
+    <div class="modal-header"><h3>${escapeHTML(opts.title || "Emin misiniz?")}</h3></div>
     <div class="modal-body"><p style="margin:0;color:var(--ink-soft);">${escapeHTML(message)}</p></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" data-close>Vazgeç</button>
-      <button class="btn btn-danger" style="background:var(--danger);color:#fff;" id="confirmYes">Evet, Sil</button>
+      <button class="btn btn-danger" style="background:var(--danger);color:#fff;" id="confirmYes">${escapeHTML(opts.confirmLabel || "Evet, Sil")}</button>
     </div>
   `);
   bindModalClose();
@@ -1028,6 +1089,32 @@ function render(){
 document.addEventListener("click",(e)=>{
   const btn = e.target.closest("[data-view]");
   if(btn) navigate(btn.dataset.view);
+});
+
+/* Actions offered from empty states, so a blank list is a starting point rather than
+   a dead end. */
+document.addEventListener("click",(e)=>{
+  const create = e.target.closest("[data-quick-new]");
+  if(create){
+    const actions = {
+      customer: ()=> openCustomerForm(null),
+      rx:       ()=> openRxForm(null, null),
+      sale:     ()=> openSaleForm(null, null),
+      product:  ()=> openProductForm(null),
+    };
+    (actions[create.dataset.quickNew] || (()=>{}))();
+    return;
+  }
+  const clear = e.target.closest("[data-clear-filters]");
+  if(!clear) return;
+  const resets = {
+    customers: ()=>{ customerSearchQuery=""; customerTagFilter="all"; customerPage=1; },
+    sales:     ()=>{ salesSearchQuery="";    salesStatusFilter="all"; salesPage=1; },
+    inventory: ()=>{ inventorySearchQuery=""; inventoryCategoryFilter="all"; inventoryPage=1; },
+    rx:        ()=>{ rxSearchQuery="";       rxTypeFilter="all";      rxPage=1; },
+  };
+  const reset = resets[clear.dataset.clearFilters];
+  if(reset){ reset(); render(); }
 });
 
 function updateNavCounts(){
@@ -1328,10 +1415,20 @@ function importBackupFile(file){
       if(!data.customers || !data.prescriptions || !data.sales || !data.products){
         throw new Error("format");
       }
-      DB = migrateDB(data);
-      saveDB();
-      showToast("Yedek başarıyla yüklendi.", "success");
-      navigate("dashboard");
+      // Restoring replaces everything on the device, so say what is being traded for
+      // what before it happens rather than after.
+      const current = `${DB.customers.length} müşteri, ${DB.prescriptions.length} reçete, ${DB.sales.length} satış`;
+      const incoming = `${data.customers.length} müşteri, ${data.prescriptions.length} reçete, ${data.sales.length} satış`;
+      confirmAction(
+        `Yedekteki kayıtlar (${incoming}) yüklenecek ve bu cihazdaki mevcut kayıtların (${current}) yerini alacak. Bu işlem geri alınamaz.`,
+        ()=>{
+          DB = migrateDB(data);
+          saveDB();
+          showToast("Yedek başarıyla yüklendi.", "success");
+          navigate("dashboard");
+        },
+        {title:"Yedeği geri yükle", confirmLabel:"Evet, geri yükle"}
+      );
     }catch(err){
       showToast("Dosya okunamadı. Geçerli bir Kaner Optik yedeği seçin.", "error");
     }
@@ -1612,6 +1709,12 @@ function renderCustomers(){
           <button type="button" class="chip ${customerTagFilter==='all'?'active':''}" data-tag-filter="all">Tümü</button>
           ${CUSTOMER_TAGS.map(t=>`<button type="button" class="chip ${customerTagFilter===t?'active':''}" data-tag-filter="${t}">${t}</button>`).join("")}
         </div>
+        ${mobileSortHTML("customers", [
+          ["ad","Ad Soyad (A–Z)","Ad Soyad (Z–A)"],
+          ["olusturma","Kayıt tarihi (eski)","Kayıt tarihi (yeni)"],
+          ["rx","Son reçete (eski)","Son reçete (yeni)"],
+          ["spend","Alışveriş (az)","Alışveriş (çok)"]
+        ], customerSort)}
       </div>
       <div class="toolbar-right">
         <button class="btn btn-ghost" id="btnExportCustomersCSV">
@@ -1625,7 +1728,12 @@ function renderCustomers(){
       </div>
     </div>
     <div class="card" style="padding:0;">
-      ${total===0 ? emptyState("Müşteri bulunamadı","Aramanızı değiştirin ya da yeni bir müşteri ekleyin.") : `
+      ${total===0 ? emptyState(
+        (customerSearchQuery||customerTagFilter!=="all") ? "Eşleşen müşteri yok" : "Henüz müşteri yok",
+        (customerSearchQuery||customerTagFilter!=="all") ? "Arama veya etiket filtresi sonuç vermedi." : "İlk müşterinizi ekleyerek başlayın.",
+        (customerSearchQuery||customerTagFilter!=="all")
+          ? `<button class="btn btn-ghost" data-clear-filters="customers">Filtreleri temizle</button>`
+          : `<button class="btn btn-primary" data-quick-new="customer">Yeni Müşteri</button>`) : `
       <div class="table-wrap"><table>
         <thead><tr>
           ${th("Ad Soyad","ad")}${th("Telefon","telefon")}${th("Kayıt Tarihi","olusturma")}${th("Son Reçete","rx")}<th class="text-right sortable ${customerSort.key==='spend'?'sorted':''}" data-sort="spend">Toplam Alışveriş${sortArrow('spend',customerSort)}</th><th></th>
@@ -1730,6 +1838,16 @@ function openCustomerForm(customer){
     const soyad = document.getElementById("f_soyad").value.trim();
     const telefon = document.getElementById("f_telefon").value.trim();
     if(!ad || !soyad || !telefon){ showToast("Ad, soyad ve telefon zorunludur.","error"); return; }
+    // The inline form inside the prescription flow already guards against this; the
+    // main form used to happily create a second record for the same phone number.
+    const digits = telefon.replace(/\D/g,"");
+    const duplicate = digits && DB.customers.find(other =>
+      other.id !== (customer && customer.id) && (other.telefon||"").replace(/\D/g,"") === digits);
+    if(duplicate){
+      showToast(`${customerFullName(duplicate)} aynı telefon numarasıyla kayıtlı.`, "error");
+      document.getElementById("f_telefon").focus();
+      return;
+    }
     const data = {
       ad, soyad, telefon,
       email: document.getElementById("f_email").value.trim(),
@@ -1783,6 +1901,7 @@ function mountCustomers(){
   bindFilterInput(input, (value)=>{ customerSearchQuery = value; customerPage = 1; });
   document.getElementById("btnNewCustomer").addEventListener("click", ()=> openCustomerForm(null));
   document.getElementById("btnExportCustomersCSV").addEventListener("click", exportCustomersCSV);
+  bindMobileSort("customers", customerSort);
   document.querySelectorAll("[data-tag-filter]").forEach(b=> b.addEventListener("click", ()=>{ customerTagFilter=b.dataset.tagFilter; customerPage=1; render(); }));
   document.querySelectorAll("th.sortable").forEach(th=> th.addEventListener("click", ()=>{
     const key = th.dataset.sort;
@@ -1959,6 +2078,7 @@ function customerSalesTabHTML(c, salesList){
           <td>${saleStatusBadge(s)}</td>
           <td>
             <div class="row-actions">
+              ${saleStatus(s)!=="odendi" ? `<button class="btn-icon btn-icon-accent" data-collect-sale="${s.id}" title="Tahsilat al"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 8h20v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8z"/><path d="M2 8l3.5-4h13L22 8"/><path d="M12 12v5M9.5 14h5"/></svg></button>` : ""}
               <button class="btn-icon" data-print-sale-c="${s.id}" title="Fatura / Fiş"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V3h12v6"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="7"/></svg></button>
               <button class="btn-icon" data-edit-sale="${s.id}" title="Düzenle"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button>
               <button class="btn-icon" data-delete-sale="${s.id}" title="Sil"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>
@@ -2009,6 +2129,7 @@ function mountCustomerDetail(id){
   const newSaleBtn = document.getElementById("btnNewSaleForCustomer");
   if(newSaleBtn) newSaleBtn.addEventListener("click", ()=> openSaleForm(null, c.id));
   document.querySelectorAll("[data-print-sale-c]").forEach(b=> b.addEventListener("click", ()=> openInvoicePreview(DB.sales.find(s=>s.id===b.dataset.printSaleC))));
+  document.querySelectorAll("[data-collect-sale]").forEach(b=> b.addEventListener("click", ()=> openPaymentForm(DB.sales.find(s=>s.id===b.dataset.collectSale))));
   document.querySelectorAll("[data-edit-sale]").forEach(b=> b.addEventListener("click", ()=> openSaleForm(DB.sales.find(s=>s.id===b.dataset.editSale))));
   document.querySelectorAll("[data-delete-sale]").forEach(b=> b.addEventListener("click", ()=> deleteSale(b.dataset.deleteSale)));
 }
@@ -2103,7 +2224,12 @@ function renderPrescriptions(){
         </button>
       </div>
     </div>
-    ${total===0 ? `<div class="card">${emptyState("Reçete bulunamadı","Aramanızı değiştirin ya da yeni bir reçete ekleyin.")}</div>` :
+    ${total===0 ? `<div class="card">${emptyState(
+        (rxSearchQuery||rxTypeFilter!=="all") ? "Eşleşen reçete yok" : "Henüz reçete yok",
+        (rxSearchQuery||rxTypeFilter!=="all") ? "Arama veya tür filtresi sonuç vermedi." : "İlk reçeteyi ekleyerek başlayın.",
+        (rxSearchQuery||rxTypeFilter!=="all")
+          ? `<button class="btn btn-ghost" data-clear-filters="rx">Filtreleri temizle</button>`
+          : `<button class="btn btn-primary" data-quick-new="rx">Yeni Reçete</button>`)}</div>` :
       pageItems.map(rx=>{
         const c = getCustomer(rx.customerId);
         return `
@@ -2399,6 +2525,11 @@ function renderSales(){
         <div class="chip-select">
           ${[["all","Tümü"],["odendi","Ödendi"],["kismi","Kısmi"],["bekliyor","Bekliyor"]].map(([k,l])=>`<button type="button" class="chip ${salesStatusFilter===k?'active':''}" data-status-filter="${k}">${l}</button>`).join("")}
         </div>
+        ${mobileSortHTML("sales", [
+          ["tarih","Tarih (eski)","Tarih (yeni)"],
+          ["musteri","Müşteri (A–Z)","Müşteri (Z–A)"],
+          ["tutar","Tutar (az)","Tutar (çok)"]
+        ], salesSort)}
       </div>
       <div class="toolbar-right">
         <button class="btn btn-ghost" id="btnExportSalesCSV">
@@ -2412,7 +2543,12 @@ function renderSales(){
       </div>
     </div>
     <div class="card" style="padding:0;">
-      ${total===0 ? emptyState("Satış bulunamadı","Filtreyi değiştirin ya da yeni bir satış ekleyin.") : `
+      ${total===0 ? emptyState(
+        (salesSearchQuery||salesStatusFilter!=="all") ? "Eşleşen satış yok" : "Henüz satış yok",
+        (salesSearchQuery||salesStatusFilter!=="all") ? "Arama veya durum filtresi sonuç vermedi." : "İlk satışınızı kaydederek başlayın.",
+        (salesSearchQuery||salesStatusFilter!=="all")
+          ? `<button class="btn btn-ghost" data-clear-filters="sales">Filtreleri temizle</button>`
+          : `<button class="btn btn-primary" data-quick-new="sale">Yeni Satış</button>`) : `
       <div class="table-wrap"><table data-primary-col="2">
         <thead><tr><th>Fatura No</th>${th("Tarih","tarih")}${th("Müşteri","musteri")}<th>Ürünler</th><th class="text-right sortable ${salesSort.key==='tutar'?'sorted':''}" data-sort="tutar">Tutar${sortArrow('tutar',salesSort)}</th><th>Durum</th><th></th></tr></thead>
         <tbody>
@@ -2426,6 +2562,7 @@ function renderSales(){
               <td>${saleStatusBadge(s)}</td>
               <td>
                 <div class="row-actions">
+                  ${saleStatus(s)!=="odendi" ? `<button class="btn-icon btn-icon-accent" data-collect-sale="${s.id}" title="Tahsilat al"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 8h20v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8z"/><path d="M2 8l3.5-4h13L22 8"/><path d="M12 12v5M9.5 14h5"/></svg></button>` : ""}
                   <button class="btn-icon" data-print-sale="${s.id}" title="Fatura / Fiş"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V3h12v6"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="7"/></svg></button>
                   <button class="btn-icon" data-edit-sale-g="${s.id}" title="Düzenle"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button>
                   <button class="btn-icon" data-delete-sale-g="${s.id}" title="Sil"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>
@@ -2619,10 +2756,81 @@ function openSaleForm(sale, presetCustomerId){
 }
 
 function deleteSale(id){
-  confirmAction("Bu satış kaydı silinecek. Stoktan düşülen ürünler geri eklenmeyecektir.", ()=>{
+  const sale = DB.sales.find(s=>s.id===id);
+  if(!sale) return;
+  // Editing a sale already restores stock before re-deducting it, so deleting one had
+  // no business leaving the deduction behind — a mistyped sale could not be undone.
+  const restock = (sale.items||[])
+    .filter(it=>it.productId && DB.products.some(p=>p.id===it.productId))
+    .reduce((sum,it)=> sum + (Number(it.adet)||0), 0);
+  let message = "Bu satış kaydı kalıcı olarak silinecek.";
+  if(restock) message += ` Satışta stoktan düşülen ${restock} adet ürün stoğa geri eklenecek.`;
+  confirmAction(message, ()=>{
+    (sale.items||[]).forEach(it=>{
+      if(!it.productId) return;
+      const product = DB.products.find(p=>p.id===it.productId);
+      if(product) product.stok = (Number(product.stok)||0) + (Number(it.adet)||0);
+    });
     DB.sales = DB.sales.filter(s=>s.id!==id);
     saveDB();
-    showToast("Satış silindi.");
+    showToast(restock ? "Satış silindi, stok geri alındı." : "Satış silindi.");
+    render();
+  });
+}
+
+/* ---------------- Collecting a balance ---------------- */
+/* Taking the rest of the money is the most common thing that happens to a sale after
+   it is written, and it used to mean opening the full edit form and doing the
+   arithmetic by hand. */
+function openPaymentForm(sale){
+  // saleTotal is the gross figure; taxBreakdown only splits VAT back out of it.
+  const total = saleTotal(sale);
+  const paid = Number(sale.odenen)||0;
+  const due = Math.max(0, total - paid);
+  const customer = getCustomer(sale.customerId);
+  openModal(`
+    <div class="modal-header"><h3>Tahsilat</h3><button class="btn-icon" data-close aria-label="Kapat">✕</button></div>
+    <div class="modal-body">
+      <div class="payment-summary">
+        <div><span>Müşteri</span><strong>${escapeHTML(customerFullName(customer))}</strong></div>
+        <div><span>Fatura No</span><strong class="cell-mono">${escapeHTML(sale.faturaNo||"—")}</strong></div>
+        <div><span>Genel toplam</span><strong class="cell-mono">${fmtCurrency(total)}</strong></div>
+        <div><span>Şu ana kadar ödenen</span><strong class="cell-mono">${fmtCurrency(paid)}</strong></div>
+        <div class="payment-due"><span>Kalan</span><strong class="cell-mono">${fmtCurrency(due)}</strong></div>
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label>Tahsil edilen tutar</label>
+          <input type="number" inputmode="decimal" min="0" step="0.01" id="f_pay_amount" value="${due.toFixed(2)}">
+        </div>
+        <div class="field">
+          <label>Ödeme yöntemi</label>
+          <select id="f_pay_method">${PAYMENT_METHODS.map(m=>`<option ${sale.odemeYontemi===m?"selected":""}>${m}</option>`).join("")}</select>
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-sm" type="button" id="payFullBtn">Kalanın tamamını tahsil et</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" data-close>Vazgeç</button>
+      <button class="btn btn-primary" id="savePaymentBtn">Tahsilatı kaydet</button>
+    </div>
+  `);
+  bindModalClose();
+  const amountInput = document.getElementById("f_pay_amount");
+  document.getElementById("payFullBtn").addEventListener("click", ()=>{
+    amountInput.value = due.toFixed(2);
+    amountInput.focus();
+  });
+  document.getElementById("savePaymentBtn").addEventListener("click", ()=>{
+    const amount = parseFloat(amountInput.value);
+    if(!(amount > 0)){ showToast("Tahsil edilen tutar sıfırdan büyük olmalıdır.","error"); return; }
+    if(amount > due + 0.005){ showToast(`Kalan tutar ${fmtCurrency(due)}. Daha fazlasını tahsil edemezsiniz.`,"error"); return; }
+    sale.odenen = Math.min(total, paid + amount);
+    sale.odemeYontemi = document.getElementById("f_pay_method").value;
+    saveDB();
+    closeModal();
+    const left = total - sale.odenen;
+    showToast(left > 0.005 ? `${fmtCurrency(amount)} tahsil edildi. Kalan ${fmtCurrency(left)}.` : "Satış tamamen tahsil edildi.", "success");
     render();
   });
 }
@@ -2711,6 +2919,7 @@ function openInvoicePreview(sale){
 function mountSales(){
   const input = document.getElementById("salesFilterInput");
   bindFilterInput(input, (value)=>{ salesSearchQuery = value; salesPage = 1; });
+  bindMobileSort("sales", salesSort);
   document.querySelectorAll("[data-status-filter]").forEach(b=> b.addEventListener("click", ()=>{ salesStatusFilter = b.dataset.statusFilter; salesPage=1; render(); }));
   document.getElementById("btnNewSale").addEventListener("click", ()=> openSaleForm(null,null));
   document.getElementById("btnExportSalesCSV").addEventListener("click", exportSalesCSV);
@@ -2725,6 +2934,7 @@ function mountSales(){
   document.querySelectorAll("[data-edit-sale-g]").forEach(b=> b.addEventListener("click", ()=> openSaleForm(DB.sales.find(s=>s.id===b.dataset.editSaleG))));
   document.querySelectorAll("[data-delete-sale-g]").forEach(b=> b.addEventListener("click", ()=> deleteSale(b.dataset.deleteSaleG)));
   document.querySelectorAll("[data-print-sale]").forEach(b=> b.addEventListener("click", ()=> openInvoicePreview(DB.sales.find(s=>s.id===b.dataset.printSale))));
+  document.querySelectorAll("[data-collect-sale]").forEach(b=> b.addEventListener("click", ()=> openPaymentForm(DB.sales.find(s=>s.id===b.dataset.collectSale))));
 }
 
 /* =========================================================
@@ -2781,6 +2991,11 @@ function renderInventory(){
           <button type="button" class="chip ${inventoryCategoryFilter==='all'?'active':''}" data-cat-filter="all">Tümü</button>
           ${PRODUCT_CATEGORIES.map(c=>`<button type="button" class="chip ${inventoryCategoryFilter===c?'active':''}" data-cat-filter="${c}">${c}</button>`).join("")}
         </div>
+        ${mobileSortHTML("inventory", [
+          ["marka","Marka (A–Z)","Marka (Z–A)"],
+          ["fiyat","Fiyat (az)","Fiyat (çok)"],
+          ["stok","Stok (az)","Stok (çok)"]
+        ], inventorySort)}
       </div>
       <div class="toolbar-right">
         <button class="btn btn-ghost" id="btnExportInventoryCSV">
@@ -2795,7 +3010,12 @@ function renderInventory(){
     </div>
 
     <div class="card" style="padding:0;">
-      ${total===0 ? emptyState("Ürün bulunamadı","Filtreyi değiştirin ya da yeni ürün ekleyin.") : `
+      ${total===0 ? emptyState(
+        (inventorySearchQuery||inventoryCategoryFilter!=="all") ? "Eşleşen ürün yok" : "Stok boş",
+        (inventorySearchQuery||inventoryCategoryFilter!=="all") ? "Arama veya kategori filtresi sonuç vermedi." : "İlk ürününüzü ekleyerek stok takibine başlayın.",
+        (inventorySearchQuery||inventoryCategoryFilter!=="all")
+          ? `<button class="btn btn-ghost" data-clear-filters="inventory">Filtreleri temizle</button>`
+          : `<button class="btn btn-primary" data-quick-new="product">Yeni Ürün</button>`) : `
       <div class="table-wrap"><table data-primary-col="1">
         <thead><tr><th>Kategori</th>${th("Marka / Model","marka")}<th>Renk</th>${th("Fiyat","fiyat")}${th("Stok","stok")}<th>SKU</th><th></th></tr></thead>
         <tbody>
@@ -2902,6 +3122,7 @@ function deleteProduct(id){
 function mountInventory(){
   const input = document.getElementById("invFilterInput");
   bindFilterInput(input, (value)=>{ inventorySearchQuery = value; inventoryPage = 1; });
+  bindMobileSort("inventory", inventorySort);
   document.querySelectorAll("[data-cat-filter]").forEach(b=> b.addEventListener("click", ()=>{ inventoryCategoryFilter = b.dataset.catFilter; render(); }));
   document.getElementById("btnNewProduct").addEventListener("click", ()=> openProductForm(null));
   document.querySelectorAll("[data-edit-product]").forEach(b=> b.addEventListener("click", ()=> openProductForm(DB.products.find(p=>p.id===b.dataset.editProduct))));

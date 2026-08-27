@@ -451,6 +451,9 @@ body.dark-mode fieldset { background: #142023; }
   .card-title { font-size: 15px; }
   .card-head p { font-size: 10.5px; }
 
+  .mobile-sort { display: flex; }
+  .mobile-sort select { min-height: 44px; font-size: 15px; }
+
   .toolbar-row { display: grid; grid-template-columns: 1fr; gap: 9px; }
   .toolbar-left, .toolbar-right { width: 100%; }
   .toolbar-left .search-box { width: 100%; }
