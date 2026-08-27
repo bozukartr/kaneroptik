@@ -13,7 +13,9 @@ Kaner Optik için saf HTML, CSS ve JavaScript ile geliştirilmiş; masaüstü ve
 - Silinen satışta stoğun otomatik geri alınması
 - A5 fatura ve termal fiş çıktısı
 - Ürün/stok yönetimi ve kritik stok uyarıları
-- Ciro, ödeme ve müşteri raporları
+- Ciro, ödeme ve müşteri raporları (bu ay / 3 ay / 12 ay / bu yıl / tümü)
+- Silme ve sıfırlama işlemlerinde "Geri al"
+- Ondalık alanlarda hem virgül hem nokta kabulü
 - CSV dışa aktarma ve JSON yedekleme/geri yükleme
 - Mobil alt navigasyon (Panel, Müşteri, Reçete, Satış, Stok) ve "Daha" sayfası
 - Mobil kart görünümünde sıralama ve filtre temizleme
